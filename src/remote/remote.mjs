@@ -363,7 +363,9 @@ ov.addEventListener('pointercancel', endDrag);
 // ---------------------------------------------------------------- ui -----
 function ui() {
   const dot = $('#dot');
-  dot.className = 'dot ' + (st.connected ? 'ok' : 'bad');
+  dot.classList.toggle('bg-good', st.connected);
+  dot.classList.toggle('bg-warn', !st.connected);
+  dot.classList.remove('bg-bad');
   let s;
   if (!st.connected) s = 'Connecting to the app…';
   else if (!st.stream) s = 'Connected · camera off';
@@ -373,9 +375,11 @@ function ui() {
     + (st.cfg.calibrated ? '' : ' · not aligned') + (st.cfg.enabled ? '' : ' · effects off in app');
   else s = st.cfg.calibrated ? 'Aligned · ready' : 'Not aligned yet';
   $('#status').textContent = s;
-  $('#bTrack').textContent = st.tracking ? 'Stop' : 'Track';
-  $('#bTrack').className = st.tracking ? 'on' : 'primary';
-  $('#bTrack').disabled = st.loading;
+  const tb = $('#bTrack');
+  tb.textContent = st.tracking ? 'Stop tracking' : 'Track';
+  tb.classList.toggle('bg-bad', st.tracking);
+  tb.classList.toggle('bg-brand', !st.tracking);
+  tb.disabled = st.loading;
   $('#bAlign').disabled = !st.stream;
   document.body.classList.toggle('mirror', !!st.mirror);
   $('#sheetInfo').textContent = `Tracker ${st.landmarker ? `${st.modelQ} on ${st.delegate}` : 'not loaded'} · ${st.info.models ? 'from the app' : 'from the internet'} · ${location.host}`;
@@ -415,14 +419,31 @@ const h = (tag, props = {}, kids = []) => {
 };
 function ctl(op, extra = {}) { send({ t: 'ctl', op, ...extra }); }
 
+// shared Tailwind class recipes (kept as literals so the CSS build can see them)
+const CX = {
+  card: 'rounded-2xl bg-surface-1 border border-line p-4',
+  head: 'text-[11px] font-bold uppercase tracking-[0.13em] text-ink-dim',
+  hint: 'text-[13px] text-ink-dim',
+  btn: 'min-h-[48px] px-3 rounded-xl bg-surface-2 border border-line font-medium text-[14px] active:scale-[.98] transition-transform grid place-items-center text-center',
+  btnPrimary: 'min-h-[48px] px-3 rounded-xl bg-brand text-white font-semibold active:scale-[.98] transition-transform grid place-items-center',
+  btnOn: 'min-h-[48px] px-3 rounded-xl bg-brand text-white font-semibold grid place-items-center',
+  ctlRow: 'grid grid-cols-[64px_1fr_46px] items-center gap-3',
+  ctlLabel: 'text-[12.5px] text-ink-dim truncate',
+  ctlVal: 'text-right text-[12px] text-ink-dim tabular-nums',
+  input: 'w-full min-h-[46px] px-3.5 rounded-xl bg-surface-2 border border-line text-ink placeholder:text-ink-faint',
+};
+
 function setView(v) {
   st.view = v; prefs.set('view', v);
   const panel = v === 'control' || v === 'queue';
-  document.body.classList.remove('boot');
   document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
-  for (const b of document.querySelectorAll('#viewSeg button')) b.classList.toggle('on', b.dataset.view === v);
-  positionNavGlow();
-  const showP = (id, on) => { const p = $(id); if (on) { p.hidden = false; p.classList.remove('enter'); void p.offsetWidth; p.classList.add('enter'); } else p.hidden = true; };
+  for (const b of document.querySelectorAll('#viewSeg button')) {
+    const on = b.dataset.view === v;
+    b.classList.toggle('text-brand', on);
+    b.classList.toggle('bg-surface-2', on);
+    b.classList.toggle('text-ink-faint', !on);
+  }
+  const showP = (id, on) => { const p = $(id); if (on) { p.hidden = false; p.classList.remove('panel-enter'); void p.offsetWidth; p.classList.add('panel-enter'); } else p.hidden = true; };
   showP('#deck', v === 'control');
   showP('#queue', v === 'queue');
   if (v === 'control') { send({ t: 'deckSub' }); renderDeck(); }
@@ -441,13 +462,6 @@ function syncLiveSub() {
   if (!want) { st.hasFrame = false; document.querySelectorAll('.livecard').forEach((c) => c.classList.remove('live')); }
 }
 
-function positionNavGlow() {
-  const on = document.querySelector('#viewSeg button.on');
-  const glow = $('#navGlow');
-  if (!on || !glow) return;
-  glow.style.width = on.offsetWidth + 'px';
-  glow.style.transform = `translateX(${on.offsetLeft - 6}px)`;
-}
 function haptic(ms = 8) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
 
 let deckShape = '';
@@ -460,19 +474,32 @@ function deckShapeKey() {
 function renderDeck() {
   if (st.view !== 'control') return;
   const root = $('#deck');
-  if (!st.deck || !st.catalog) { root.textContent = ''; root.append(h('div', { class: 'dhint', text: 'Waiting for the app…' })); return; }
+  if (!st.deck || !st.catalog) { root.textContent = ''; root.append(h('div', { class: 'pt-[5rem] px-6 text-center ' + CX.hint, text: 'Waiting for the app…' })); return; }
   const key = deckShapeKey();
   if (key !== deckShape) { deckShape = key; buildDeck(root); }
   updateDeck();
 }
 
+const SEL = 'min-h-[44px] px-3 rounded-xl bg-surface-2 border border-line text-ink appearance-none';
+const BTN = 'min-h-[48px] px-3.5 rounded-xl border border-line bg-surface-2 text-ink font-medium text-[14.5px] flex items-center justify-center gap-1.5 active:scale-[.97] transition-transform';
+function sec(headText, kids) {
+  return h('div', { class: 'rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3' },
+    [headText ? h('div', { class: CX.head, text: headText }) : null].concat(kids));
+}
+function setActive(btn, on) {
+  if (!btn) return;
+  btn.classList.toggle('bg-brand', on); btn.classList.toggle('border-transparent', on); btn.classList.toggle('text-white', on);
+  btn.classList.toggle('bg-surface-2', !on); btn.classList.toggle('border-line', !on);
+}
+
 function slider(label, min, max, step, get, onInput) {
   const inp = h('input', { type: 'range', min, max, step });
-  const val = h('span', { class: 'dval' });
+  const val = h('span', { class: 'text-right text-[12px] text-ink-dim tabular-nums' });
   inp.value = get();
   inp.addEventListener('input', () => { val.textContent = onInput(Number(inp.value)); });
   inp._get = get; inp._val = val; inp._fmt = onInput;
-  const row = h('div', { class: 'dctl' }, [h('label', { text: label }), inp, val]);
+  const row = h('div', { class: 'grid grid-cols-[64px_1fr_46px] items-center gap-3' },
+    [h('label', { class: 'text-[12.5px] text-ink-dim truncate', text: label }), inp, val]);
   val.textContent = onInput(Number(inp.value));
   fillRange(inp);
   return { row, inp };
@@ -481,41 +508,41 @@ function slider(label, min, max, step, get, onInput) {
 // A live preview of the projection (streamed from the Mac) with the title and
 // transport. Shared by the Mixer and Queue tabs.
 function liveHero() {
-  const img = h('img', { class: 'liveImg', alt: '', decoding: 'async' });
-  const noSig = h('div', { class: 'liveNo' }, [h('div', { class: 'liveNoIcon', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
-  const title = h('div', { class: 'liveTitle' });
-  const play = h('button', { class: 'liveBtn big', onclick: () => ctl('transport', { cmd: 'toggle' }) });
-  const mute = h('button', { class: 'liveBtn', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck && st.deck.transport.muted) }) });
+  const img = h('img', { class: 'liveImg absolute inset-0 w-full h-full object-contain hidden', alt: '', decoding: 'async' });
+  const noSig = h('div', { class: 'liveNo absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-dim text-[13px]' },
+    [h('div', { class: 'text-3xl text-brand/70', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
+  const title = h('div', { class: 'liveTitle absolute left-4 right-4 bottom-3 text-[16px] font-semibold truncate drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]' });
+  const play = h('button', { class: 'liveBtn flex-[1.6] min-h-[50px] rounded-xl bg-brand text-white text-xl grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'toggle' }) });
+  const mute = h('button', { class: 'liveBtn flex-1 min-h-[50px] rounded-xl bg-surface-2 border border-line grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck && st.deck.transport.muted) }) });
   refs.title = title; refs.play = play; refs.mute = mute;
-  const card = h('div', { class: 'dsec livecard' + (st.hasFrame ? ' live' : '') }, [
-    h('div', { class: 'liveStage', onclick: () => toggleLiveFull() }, [
+  const tbtn = (t, cmd) => h('button', { class: 'liveBtn flex-1 min-h-[50px] rounded-xl bg-surface-2 border border-line grid place-items-center text-lg active:scale-[.98] transition-transform', text: t, onclick: () => ctl('transport', { cmd }) });
+  return h('div', { class: 'livecard rounded-2xl overflow-hidden bg-black border border-line' + (st.hasFrame ? ' live' : '') }, [
+    h('div', { class: 'relative aspect-video bg-black cursor-zoom-in', onclick: () => toggleLiveFull() }, [
       img, noSig,
-      h('span', { class: 'liveBadge' }, [h('i'), 'LIVE']),
-      h('div', { class: 'liveGrad' }), title,
+      h('span', { class: 'liveBadge absolute top-3 left-3 hidden items-center gap-1.5 text-[10px] font-bold tracking-wider text-white bg-black/50 px-2.5 py-1 rounded-full' },
+        [h('i', { class: 'w-1.5 h-1.5 rounded-full bg-bad' }), 'LIVE']),
+      h('div', { class: 'absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/75 to-transparent pointer-events-none' }),
+      title,
     ]),
-    h('div', { class: 'liveCtl' }, [
-      h('button', { class: 'liveBtn', text: '⏮', onclick: () => ctl('transport', { cmd: 'prev' }) }),
-      play,
-      h('button', { class: 'liveBtn', text: '⏭', onclick: () => ctl('transport', { cmd: 'next' }) }),
-      mute,
-    ]),
+    h('div', { class: 'flex gap-2 p-3' }, [tbtn('⏮', 'prev'), play, tbtn('⏭', 'next'), mute]),
   ]);
-  return card;
 }
 function onLiveFrame(m) {
   if (!m.data) return;
   st.hasFrame = true;
-  st.lastFrame = performance.now();
   const url = 'data:image/jpeg;base64,' + m.data;
   st.lastFrameUrl = url;
-  document.querySelectorAll('.liveImg').forEach((im) => { im.src = url; });
-  document.querySelectorAll('.livecard').forEach((c) => c.classList.add('live'));
+  document.querySelectorAll('.liveImg').forEach((im) => { im.src = url; im.classList.remove('hidden'); });
+  document.querySelectorAll('.liveNo').forEach((n) => n.classList.add('hidden'));
+  document.querySelectorAll('.liveBadge').forEach((b) => { b.classList.remove('hidden'); b.classList.add('flex'); });
   const full = $('#liveFull img'); if (full) full.src = url;
 }
 function toggleLiveFull() {
   let f = $('#liveFull');
   if (f) { f.remove(); return; }
-  f = h('div', { id: 'liveFull', onclick: () => f.remove() }, [h('img', { alt: '' }), h('div', { class: 'liveFullHint', text: 'Tap to close' })]);
+  f = h('div', { id: 'liveFull', class: 'fixed inset-0 z-[100] bg-black/95 flex items-center justify-center cursor-zoom-out', onclick: () => f.remove() },
+    [h('img', { class: 'max-w-full max-h-full object-contain', alt: '' }),
+      h('div', { class: 'absolute bottom-8 inset-x-0 text-center text-ink-dim text-[13px]', text: 'Tap to close' })]);
   if (st.lastFrameUrl) f.querySelector('img').src = st.lastFrameUrl;
   document.body.append(f);
 }
@@ -524,88 +551,85 @@ function buildDeck(root) {
   root.textContent = '';
   refs.layers = {};
 
-  root.append(liveHero());
+  const wrap = h('div', { class: 'px-3.5 pt-[4.4rem] safe-pb-nav flex flex-col gap-3' });
+  root.append(wrap);
+
+  wrap.append(liveHero());
 
   // --- effects master
-  refs.fxOn = h('button', { class: 'grow', text: 'Effects', onclick: () => ctl('fxEnabled', { on: !st.deck.fx.enabled }) });
-  refs.black = h('button', { text: 'Blackout', onclick: () => ctl('blackout') });
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'drow' }, [
+  refs.fxOn = h('button', { class: BTN + ' flex-1', text: 'Effects', onclick: () => ctl('fxEnabled', { on: !st.deck.fx.enabled }) });
+  refs.black = h('button', { class: BTN + ' flex-1', text: 'Blackout', onclick: () => ctl('blackout') });
+  wrap.append(sec(null, [
+    h('div', { class: 'flex gap-2.5' }, [
       refs.fxOn,
-      h('button', { class: 'accent', text: '✳ Trigger all', onclick: () => ctl('triggerAll') }),
+      h('button', { class: BTN + ' flex-1 !bg-brand/15 !border-brand/40 !text-brand', text: '✳ Trigger', onclick: () => ctl('triggerAll') }),
       refs.black,
     ]),
   ]));
 
   // --- outputs & audio
-  refs.projBtn = h('button', { class: 'grow', text: 'Projector', onclick: () => ctl('output', { role: 'projector', enabled: !(st.deck.outputs && st.deck.outputs.projector) }) });
-  refs.tvBtn = h('button', { class: 'grow', text: 'TV', onclick: () => ctl('output', { role: 'tv', enabled: !(st.deck.outputs && st.deck.outputs.tv) }) });
-  refs.audioTarget = h('select', {}, [['auto', 'Auto'], ['tv', 'TV'], ['projector', 'Projector'], ['control', 'Mac window'], ['none', 'Muted']].map(([v, t]) => h('option', { value: v, text: t })));
+  refs.projBtn = h('button', { class: BTN + ' flex-1', text: 'Projector', onclick: () => ctl('output', { role: 'projector', enabled: !(st.deck.outputs && st.deck.outputs.projector) }) });
+  refs.tvBtn = h('button', { class: BTN + ' flex-1', text: 'TV', onclick: () => ctl('output', { role: 'tv', enabled: !(st.deck.outputs && st.deck.outputs.tv) }) });
+  refs.audioTarget = h('select', { class: SEL }, [['auto', 'Auto'], ['tv', 'TV'], ['projector', 'Projector'], ['control', 'Mac window'], ['none', 'Muted']].map(([v, t]) => h('option', { value: v, text: t })));
   refs.audioTarget.addEventListener('change', () => ctl('audioTarget', { value: refs.audioTarget.value }));
-  refs.audioSink = h('select', {});
+  refs.audioSink = h('select', { class: SEL });
   refs.audioSink.addEventListener('change', () => { const o = refs.audioSink.selectedOptions[0]; ctl('audioSink', { id: refs.audioSink.value, label: o ? o.textContent : '' }); });
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'Output' }),
-    h('div', { class: 'drow' }, [refs.projBtn, refs.tvBtn]),
-    h('div', { class: 'dctl' }, [h('label', { text: 'Audio' }), refs.audioTarget]),
-    h('div', { class: 'dctl' }, [h('label', { text: 'Device' }), refs.audioSink]),
+  wrap.append(sec('Output', [
+    h('div', { class: 'flex gap-2.5' }, [refs.projBtn, refs.tvBtn]),
+    h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Audio' }), refs.audioTarget]),
+    h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Device' }), refs.audioSink]),
   ]));
 
   // --- scenes
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'Scenes' }),
-    h('div', { class: 'chips' }, st.catalog.scenes.map((name) =>
-      h('button', { class: 'chip', text: name, onclick: () => ctl('scene', { name }) }))),
+  wrap.append(sec('Scenes', [
+    h('div', { class: 'flex gap-2.5 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1' }, st.catalog.scenes.map((name) =>
+      h('button', { class: 'shrink-0 min-h-[42px] px-4 rounded-xl bg-surface-2 border border-line text-[13.5px] font-medium active:bg-brand active:text-white active:border-transparent transition-colors', text: name, onclick: () => ctl('scene', { name }) }))),
   ]));
 
   // --- layers
-  const layerBox = h('div', { class: 'dlayers' });
+  const layerBox = h('div', { class: 'flex flex-col gap-2.5' });
   refs.layerBox = layerBox;
   const layers = st.deck.fx.layers || [];
-  if (!layers.length) layerBox.append(h('div', { class: 'dhint', text: 'No effects yet — add one below or pick a scene.' }));
+  if (!layers.length) layerBox.append(h('div', { class: CX.hint, text: 'No effects yet — add one below or pick a scene.' }));
   for (const L of layers) {
-    const on = h('button', { class: 'dot', text: L.on ? '●' : '○', title: 'Show / hide',
+    const on = h('button', { class: 'w-10 h-10 rounded-lg border border-line grid place-items-center text-[15px] shrink-0', text: L.on ? '●' : '○', title: 'Show / hide',
       onclick: () => ctl('layerOn', { id: L.id, on: !refsLayerOn(L.id) }) });
+    on._on = () => on;
     const op = slider('', 0, 1, 0.01, () => layerById(L.id).opacity,
       (v) => { ctl('layerOpacity', { id: L.id, value: v }); return Math.round(v * 100) + '%'; });
     const trig = L.actions.length
-      ? h('button', { class: 'zap', text: '⚡', title: L.actions[0].label, onclick: () => ctl('triggerLayer', { id: L.id }) })
+      ? h('button', { class: 'w-11 h-10 rounded-lg bg-brand/15 border border-brand/40 text-brand grid place-items-center shrink-0', text: '⚡', title: L.actions[0].label, onclick: () => ctl('triggerLayer', { id: L.id }) })
       : null;
-    const del = h('button', { class: 'x', text: '✕', onclick: () => ctl('removeLayer', { id: L.id }) });
-    const row = h('div', { class: 'dlayer' }, [
-      h('div', { class: 'dlrow' }, [on, h('span', { class: 'dlname', text: L.name }), trig, del]),
+    const del = h('button', { class: 'w-10 h-10 rounded-lg border border-bad/30 text-bad grid place-items-center shrink-0', text: '✕', onclick: () => ctl('removeLayer', { id: L.id }) });
+    const row = h('div', { class: 'rounded-xl bg-surface-2/60 border border-line p-2.5 flex flex-col gap-2' }, [
+      h('div', { class: 'flex items-center gap-2.5' }, [on, h('span', { class: 'flex-1 text-[14.5px] font-medium truncate', text: L.name }), trig, del]),
       op.row,
     ]);
     refs.layers[L.id] = { on, op: op.inp };
     layerBox.append(row);
-    // a second row of the effect's other actions, if any
     if (L.actions.length > 1) {
-      layerBox.append(h('div', { class: 'dacts' }, L.actions.slice(1).map((a) =>
-        h('button', { class: 'act', text: a.label, onclick: () => ctl('layerAction', { id: L.id, name: a.name }) }))));
+      layerBox.append(h('div', { class: 'flex flex-wrap gap-2 -mt-0.5' }, L.actions.slice(1).map((a) =>
+        h('button', { class: 'flex-1 min-w-[calc(50%-0.5rem)] min-h-[38px] px-2.5 rounded-lg bg-surface-2 border border-line text-[12.5px]', text: a.label, onclick: () => ctl('layerAction', { id: L.id, name: a.name }) }))));
     }
   }
-  root.append(h('div', { class: 'dsec' }, [h('div', { class: 'dhead', text: 'Layers' }), layerBox]));
+  wrap.append(sec('Layers', [layerBox]));
 
   // --- add effect + clear
-  const sel = h('select', {}, [h('option', { value: '', text: 'Add an effect…' }),
+  const sel = h('select', { class: SEL + ' flex-1' }, [h('option', { value: '', text: 'Add an effect…' }),
     ...st.catalog.effects.map((e) => h('option', { value: e.type, text: e.label }))]);
   sel.addEventListener('change', () => { if (sel.value) { ctl('addLayer', { type: sel.value }); sel.value = ''; } });
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'drow' }, [sel, h('button', { text: 'Clear', onclick: () => ctl('clearLayers') })]),
-  ]));
+  wrap.append(sec(null, [h('div', { class: 'flex gap-2.5 items-center' }, [sel, h('button', { class: BTN + ' shrink-0 !text-bad', text: 'Clear', onclick: () => ctl('clearLayers') })])]));
 
   // --- world + quality
   const grav = slider('Gravity', -2, 4, 0.05, () => st.deck.fx.gravity, (v) => { ctl('world', { key: 'gravity', value: v }); return v.toFixed(2); });
   const wind = slider('Wind', -2, 2, 0.05, () => st.deck.fx.wind, (v) => { ctl('world', { key: 'wind', value: v }); return v.toFixed(2); });
   const time = slider('Time', 0, 3, 0.05, () => st.deck.fx.timeScale, (v) => { ctl('world', { key: 'timeScale', value: v }); return v.toFixed(2) + 'x'; });
   refs.grav = grav.inp; refs.wind = wind.inp; refs.time = time.inp;
-  const qsel = h('select', {}, st.catalog.qualities.map((q) => h('option', { value: q, text: q[0].toUpperCase() + q.slice(1) })));
+  const qsel = h('select', { class: SEL }, st.catalog.qualities.map((q) => h('option', { value: q, text: q[0].toUpperCase() + q.slice(1) })));
   qsel.addEventListener('change', () => ctl('quality', { value: qsel.value }));
   refs.qsel = qsel;
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'World' }), grav.row, wind.row, time.row,
-    h('div', { class: 'dctl' }, [h('label', { text: 'Quality' }), qsel]),
-  ]));
+  wrap.append(sec('World', [grav.row, wind.row, time.row,
+    h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Quality' }), qsel])]));
 }
 
 function layerById(id) { return (st.deck.fx.layers || []).find((l) => l.id === id) || { opacity: 1, on: true }; }
@@ -620,11 +644,12 @@ function updateDeck() {
   if (refs.title) refs.title.textContent = t.title || (t.has ? '' : 'Nothing loaded');
   if (refs.play) refs.play.textContent = t.playing ? '⏸' : '▶';
   if (refs.mute) refs.mute.textContent = t.muted ? '🔇' : '🔊';
-  if (refs.fxOn) refs.fxOn.classList.toggle('on', !!d.fx.enabled);
-  if (refs.black) refs.black.classList.toggle('on', !!d.blackout);
+  setActive(refs.fxOn, !!d.fx.enabled);
+  setActive(refs.black, !!d.blackout);
   for (const L of d.fx.layers || []) {
     const r = refs.layers[L.id]; if (!r) continue;
     r.on.textContent = L.on ? '●' : '○';
+    r.on.classList.toggle('text-brand', L.on); r.on.classList.toggle('text-ink-faint', !L.on);
     if (r.op !== active) { r.op.value = L.opacity; r.op._val.textContent = Math.round(L.opacity * 100) + '%'; fillRange(r.op); }
   }
   const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); fillRange(inp); } };
@@ -632,8 +657,8 @@ function updateDeck() {
   if (refs.qsel && refs.qsel !== active) refs.qsel.value = d.fx.quality;
   // outputs + audio
   const o = d.outputs || {};
-  if (refs.projBtn) { refs.projBtn.classList.toggle('on', !!o.projector); refs.projBtn.textContent = 'Projector' + (o.projectorLabel ? '' : ''); }
-  if (refs.tvBtn) refs.tvBtn.classList.toggle('on', !!o.tv);
+  setActive(refs.projBtn, !!o.projector);
+  setActive(refs.tvBtn, !!o.tv);
   const au = d.audio || {};
   if (refs.audioTarget && refs.audioTarget !== active) refs.audioTarget.value = au.target || 'auto';
   if (refs.audioSink && refs.audioSink !== active) {
@@ -654,77 +679,78 @@ function renderQueue() {
   if (st.view !== 'queue') return;
   const root = $('#queue');
   const d = st.deck;
-  if (!d) { root.textContent = ''; root.append(h('div', { class: 'dhint', text: 'Waiting for the app…' })); return; }
+  if (!d) { root.textContent = ''; root.append(h('div', { class: 'pt-[5rem] px-6 text-center ' + CX.hint, text: 'Waiting for the app…' })); return; }
   const q = d.queue || { items: [], index: -1 };
   const shape = JSON.stringify([q.items.map((i) => i.i + i.cur), st.library.map((l) => l.id + l.status), st.libFilter]);
   if (shape === queueShape) { return; }
   queueShape = shape;
   root.innerHTML = '';
+  const wrap = h('div', { class: 'px-3.5 pt-[4.4rem] safe-pb-nav flex flex-col gap-3' });
+  root.append(wrap);
 
   // now playing — the live projection preview + transport
-  root.append(liveHero());
+  wrap.append(liveHero());
   updateDeck();
 
   // add from YouTube
-  const urlInp = h('input', { type: 'text', placeholder: 'Paste a YouTube link', inputmode: 'url' });
+  const urlInp = h('input', { type: 'text', placeholder: 'Paste a YouTube link', inputmode: 'url', class: CX.input });
   const addUrl = (toLib) => { const u = urlInp.value.trim(); if (!u) return; ctl(toLib ? 'addLibraryToLibrary' : 'addUrl', { url: u }); urlInp.value = ''; toast(toLib ? 'Downloading to library…' : 'Added to queue'); };
   urlInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addUrl(false); });
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'Add from YouTube' }),
+  wrap.append(sec('Add from YouTube', [
     urlInp,
-    h('div', { class: 'drow' }, [
-      h('button', { class: 'grow accent', text: 'Queue', onclick: () => addUrl(false) }),
-      h('button', { class: 'grow', text: 'Save to library', onclick: () => addUrl(true) }),
+    h('div', { class: 'flex gap-2.5' }, [
+      h('button', { class: BTN + ' flex-1 !bg-brand !border-transparent !text-white', text: 'Queue', onclick: () => addUrl(false) }),
+      h('button', { class: BTN + ' flex-1', text: 'Save to library', onclick: () => addUrl(true) }),
     ]),
   ]));
 
   // up next
   const upNext = q.items.filter((i) => !i.cur && i.i > q.index);
-  const nextBox = h('div', { class: 'qlist' });
-  if (!upNext.length) nextBox.append(h('div', { class: 'dhint', text: 'Nothing queued.' }));
-  for (const it of upNext.slice(0, 30)) {
-    nextBox.append(h('div', { class: 'qrow' }, [
-      h('div', { class: 'qinfo' }, [
-        h('div', { class: 'qtitle', text: it.title }),
-        h('div', { class: 'qbadge', text: it.from + (it.discovered ? ' · auto' : '') }),
-      ]),
-      h('button', { class: 'qplay', text: '▶', onclick: () => ctl('playIndex', { index: it.i }) }),
-      h('button', { class: 'qx', text: '✕', onclick: () => ctl('removeIndex', { index: it.i }) }),
-    ]));
-  }
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'drow' }, [h('div', { class: 'dhead grow', text: 'Up next (' + upNext.length + ')' }),
-      h('button', { class: 'small' + (q.autoDiscover ? ' on' : ''), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) })]),
+  const nextBox = h('div', { class: 'flex flex-col gap-2' });
+  if (!upNext.length) nextBox.append(h('div', { class: CX.hint, text: 'Nothing queued.' }));
+  for (const it of upNext.slice(0, 40)) nextBox.append(qrow(it.title, it.from + (it.discovered ? ' · auto' : ''), [
+    qbtn('▶', 'brand', () => ctl('playIndex', { index: it.i })),
+    qbtn('✕', 'bad', () => ctl('removeIndex', { index: it.i })),
+  ]));
+  const disc = h('button', { class: 'shrink-0 min-h-[34px] px-3 rounded-lg border text-[12.5px] font-semibold ' + (q.autoDiscover ? 'bg-brand border-transparent text-white' : 'bg-surface-2 border-line text-ink'), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) });
+  wrap.append(h('div', { class: 'rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3' }, [
+    h('div', { class: 'flex items-center gap-2' }, [h('div', { class: CX.head + ' flex-1', text: 'Up next · ' + upNext.length }), disc]),
     nextBox,
   ]));
 
   // library browse
-  const search = h('input', { type: 'search', placeholder: 'Search library', value: st.libFilter });
+  const search = h('input', { type: 'search', placeholder: 'Search library', value: st.libFilter, class: CX.input });
   search.addEventListener('input', () => { st.libFilter = search.value; queueShape = ''; renderLibList(libBox); });
-  const libBox = h('div', { class: 'qlist' });
+  const libBox = h('div', { class: 'flex flex-col gap-2' });
   renderLibList(libBox);
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'From library' }),
-    search, libBox,
-  ]));
+  wrap.append(sec('From library', [search, libBox]));
 }
 
+function qbtn(glyph, tone, onclick) {
+  const t = tone === 'brand' ? 'bg-brand/15 border-brand/40 text-brand'
+    : tone === 'good' ? 'bg-good/15 border-good/40 text-good' : 'bg-transparent border-bad/30 text-bad';
+  return h('button', { class: 'w-11 h-11 shrink-0 rounded-xl border grid place-items-center ' + t, text: glyph, onclick });
+}
+function qrow(title, badge, buttons) {
+  return h('div', { class: 'flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-line p-2.5' }, [
+    h('div', { class: 'flex-1 min-w-0' }, [
+      h('div', { class: 'text-[14.5px] font-medium truncate', text: title }),
+      h('div', { class: 'text-[11px] text-ink-faint uppercase tracking-wider mt-0.5', text: badge }),
+    ]),
+    ...buttons,
+  ]);
+}
 function renderLibList(box) {
   box.innerHTML = '';
   const q = st.libFilter.toLowerCase();
   const list = st.library.filter((l) => l.status === 'ready' && (!q || (l.artist + ' ' + l.title).toLowerCase().includes(q)));
-  if (!st.library.length) { box.append(h('div', { class: 'dhint', text: 'Library is empty. Add YouTube links above or on the Mac.' })); return; }
-  if (!list.length) { box.append(h('div', { class: 'dhint', text: 'No ready matches.' })); return; }
-  for (const l of list.slice(0, 60)) {
-    box.append(h('div', { class: 'qrow' }, [
-      h('div', { class: 'qinfo' }, [
-        h('div', { class: 'qtitle', text: l.artist ? l.artist + ' — ' + l.title : l.title }),
-        h('div', { class: 'qbadge', text: 'library' + (l.height ? ' · ' + (l.height >= 2160 ? '4K' : l.height + 'p') : '') }),
-      ]),
-      h('button', { class: 'qplay', text: '▶', title: 'Play now', onclick: () => ctl('addLibrary', { id: l.id, play: true }) }),
-      h('button', { class: 'qadd', text: '＋', title: 'Queue', onclick: () => { ctl('addLibrary', { id: l.id, play: false }); toast('Queued'); } }),
-    ]));
-  }
+  if (!st.library.length) { box.append(h('div', { class: CX.hint, text: 'Library is empty. Add YouTube links above or on the Mac.' })); return; }
+  if (!list.length) { box.append(h('div', { class: CX.hint, text: 'No ready matches.' })); return; }
+  for (const l of list.slice(0, 80)) box.append(qrow(
+    l.artist ? l.artist + ' — ' + l.title : l.title,
+    'library' + (l.height ? ' · ' + (l.height >= 2160 ? '4K' : l.height + 'p') : ''),
+    [qbtn('▶', 'brand', () => ctl('addLibrary', { id: l.id, play: true })),
+      qbtn('＋', 'good', () => { ctl('addLibrary', { id: l.id, play: false }); toast('Queued'); })]));
 }
 
 for (const b of document.querySelectorAll('#viewSeg button')) b.addEventListener('click', () => setView(b.dataset.view));
@@ -746,30 +772,16 @@ $('#mirrorChk').onchange = (e) => { st.mirror = e.target.checked; prefs.set('mir
 $('#nameInp').onchange = (e) => { st.name = e.target.value.trim(); prefs.set('name', st.name); send({ t: 'hello', name: st.name || deviceName(), ua: navigator.userAgent }); };
 $('#modelSel').value = st.modelQ; $('#peopleSel').value = String(st.maxPoses);
 $('#skelChk').checked = st.skeleton; $('#mirrorChk').checked = st.mirror; $('#nameInp').value = st.name;
-window.addEventListener('resize', () => { st.lastVT = -1; positionNavGlow(); });
-window.addEventListener('orientationchange', () => setTimeout(positionNavGlow, 250));
+window.addEventListener('resize', () => { st.lastVT = -1; });
 
-// --- global polish: tap ripple + haptic, and gradient-fill on range sliders ---
+// gradient-fill on range sliders + a light haptic on every button
 function fillRange(inp) {
   const min = +inp.min || 0, max = +inp.max || 100;
   const pct = max > min ? ((+inp.value - min) / (max - min)) * 100 : 50;
   inp.style.setProperty('--fill', pct.toFixed(1) + '%');
 }
 document.addEventListener('input', (e) => { if (e.target && e.target.type === 'range') fillRange(e.target); }, true);
-document.addEventListener('pointerdown', (e) => {
-  const b = e.target.closest && e.target.closest('button');
-  if (!b || b.disabled) return;
-  haptic(6);
-  const r = b.getBoundingClientRect();
-  const rip = document.createElement('span');
-  rip.className = 'ripple';
-  const d = Math.max(r.width, r.height) * 2.2;
-  rip.style.width = rip.style.height = d + 'px';
-  rip.style.left = (e.clientX - r.left) + 'px';
-  rip.style.top = (e.clientY - r.top) + 'px';
-  b.appendChild(rip);
-  setTimeout(() => rip.remove(), 600);
-}, { passive: true });
+document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('button')) haptic(6); }, { passive: true });
 
 // installable PWA (works offline enough to launch from the home screen)
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

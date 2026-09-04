@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body { height: 100%; }
+  body { @apply bg-surface-0 text-ink font-sans; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  button { -webkit-tap-highlight-color: transparent; }
+  select, input, textarea { font: inherit; color: inherit; }
+  input[type=range]{ -webkit-appearance:none; height:32px; background:transparent; width:100%; }
+  input[type=range]::-webkit-slider-runnable-track{ height:6px; border-radius:9999px;
+    background:linear-gradient(#4f8cff,#4f8cff) no-repeat, #2a2d34; background-size: var(--fill,50%) 100%, 100% 100%; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:22px; height:22px; margin-top:-8px;
+    border-radius:50%; background:#fff; border:0; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar{ display:none; }
+  .no-scrollbar{ scrollbar-width:none; }
+  .safe-t{ padding-top: max(env(safe-area-inset-top), 0.5rem); }
+  .safe-b{ padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+  .safe-pb-nav{ padding-bottom: calc(env(safe-area-inset-bottom) + 82px); }
+}
+
+/* --- app shell: camera layer + stateful visibility (not expressible as utilities) --- */
+#v, #ov { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
+#v { object-fit: contain; background: transparent; }
+#ov { pointer-events: none; z-index: 2; }
+#camScrim { position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(rgba(0,0,0,.55), transparent 20%, transparent 72%, rgba(0,0,0,.6)); }
+body.mirror #v, body.mirror #ov { transform: scaleX(-1); }
+body.aligning #ov { pointer-events: auto; }
+body.control #v, body.control #ov, body.control #camScrim { opacity: 0; pointer-events: none; }
+body.control #msg, body.control #bottom, body.aligning #bottom { display: none; }
+body.aligning #viewSeg { opacity: 0; pointer-events: none; }
+
+[hidden] { display: none !important; }
+
+/* toast + sheet motion */
+#toast { transition: opacity .22s, transform .3s cubic-bezier(.2,1.2,.4,1); opacity: 0; transform: translate(-50%, -12px); }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+#sheet { animation: sheetIn .28s cubic-bezier(.2,.9,.2,1); }
+@keyframes sheetIn { from { transform: translateY(16px); opacity: 0; } }
+.panel-enter { animation: panelIn .3s cubic-bezier(.2,.9,.25,1); }
+@keyframes panelIn { from { opacity: 0; transform: translateY(10px); } }
+
+/* iOS toggle in settings */
+.tgl { position: relative; width: 44px; height: 27px; border-radius: 9999px; background: #33363d; transition: background .2s; flex: none; }
+.tgl::after { content:''; position:absolute; top:3px; left:3px; width:21px; height:21px; border-radius:50%; background:#fff; transition: transform .2s cubic-bezier(.2,.9,.2,1); }
+input:checked + .tgl { background: #4f8cff; }
+input:checked + .tgl::after { transform: translateX(17px); }

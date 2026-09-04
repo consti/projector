@@ -1,98 +1,91 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="utf-8">
 <title>Projector Remote</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#07080c">
+<meta name="theme-color" content="#0c0d10">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Projector">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<link rel="stylesheet" href="/remote/remote.css">
+<link rel="stylesheet" href="/remote/tw.css">
 </head>
-<body class="boot">
-  <div id="bg"><span></span><span></span><span></span><div id="grain"></div></div>
-
+<body>
   <video id="v" playsinline muted autoplay></video>
   <canvas id="ov"></canvas>
   <div id="camScrim"></div>
 
-  <header id="top">
-    <span class="brand"><span id="dot" class="dot"></span><b>Projector</b></span>
-    <span class="grow"></span>
-    <span id="meter" class="mono"></span>
+  <header id="top" class="fixed top-0 inset-x-0 z-20 safe-t px-4 pb-2 flex items-center gap-2.5 pointer-events-none">
+    <span id="dot" class="w-2.5 h-2.5 rounded-full bg-warn shrink-0"></span>
+    <b class="text-[15px] tracking-tight drop-shadow">Projector</b>
+    <span class="flex-1"></span>
+    <span id="meter" class="text-xs text-ink-dim tabular-nums"></span>
   </header>
-  <div id="status" class="statusPill">Connecting…</div>
+  <div id="status" class="fixed left-1/2 -translate-x-1/2 z-20 top-[calc(env(safe-area-inset-top)+2.6rem)] px-3.5 py-1.5 rounded-full text-[12.5px] text-ink-dim bg-surface-2/90 border border-line backdrop-blur pointer-events-none max-w-[86vw] truncate">Connecting…</div>
 
-  <!-- control (mixer) -->
-  <main id="deck" class="panel" hidden></main>
-  <!-- queue -->
-  <main id="queue" class="panel" hidden></main>
+  <main id="deck" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
+  <main id="queue" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
 
-  <div id="msg">
-    <div class="msgIcon">◉</div>
-    <div id="msgText">Tap to start the camera</div>
-    <div id="msgSub" class="sub"></div>
+  <div id="msg" class="fixed inset-0 z-[15] flex flex-col items-center justify-center gap-3 px-10 text-center">
+    <div class="w-16 h-16 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center text-brand text-3xl">▶</div>
+    <div id="msgText" class="text-xl font-semibold">Tap to start the camera</div>
+    <div id="msgSub" class="text-sm text-ink-dim max-w-[32ch]"></div>
   </div>
 
-  <div id="alignBar" hidden>
-    <div class="hint">Drag each handle onto the matching coloured square on the wall. The number inside
-      each square is the handle's number.</div>
-    <div class="row">
-      <button id="bAuto" class="glass">Find markers</button>
-      <button id="bAlignCancel" class="glass">Cancel</button>
-      <button id="bAlignDone" class="primary">Done</button>
+  <div id="alignBar" class="fixed left-0 right-0 z-[18] safe-b bottom-[86px] mx-3 p-4 rounded-2xl bg-surface-1 border border-line shadow-2xl flex flex-col gap-3" hidden>
+    <div class="text-[13px] text-ink-dim leading-snug">Drag each handle onto the matching coloured square on the wall. The number inside each square is the handle's number.</div>
+    <div class="flex gap-2">
+      <button id="bAuto" class="flex-1 h-12 rounded-xl bg-surface-2 border border-line font-medium">Find markers</button>
+      <button id="bAlignCancel" class="flex-1 h-12 rounded-xl bg-surface-2 border border-line font-medium">Cancel</button>
+      <button id="bAlignDone" class="flex-1 h-12 rounded-xl bg-brand text-white font-semibold">Done</button>
     </div>
   </div>
 
-  <div id="bottom">
-    <button id="bCam" class="glass round" title="Switch camera" aria-label="Switch camera">
-      <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z"/><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+  <div id="bottom" class="fixed left-0 right-0 z-[18] bottom-[86px] safe-b px-4 flex gap-2.5">
+    <button id="bCam" aria-label="Switch camera" class="w-[52px] h-[52px] shrink-0 rounded-xl bg-surface-1 border border-line grid place-items-center">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12.5" r="3.2"/><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
     </button>
-    <button id="bAlign" class="glass">Align</button>
-    <button id="bTrack" class="primary grow">Track</button>
-    <button id="bMore" class="glass round" title="Settings" aria-label="Settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.6 1.7 1.7 0 00-1.9.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.6-1.1 1.7 1.7 0 00-.4-1.9l-.1-.1A2 2 0 117 3.5l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+    <button id="bAlign" class="px-5 h-[52px] shrink-0 rounded-xl bg-surface-1 border border-line font-medium">Align</button>
+    <button id="bTrack" class="flex-1 h-[52px] rounded-xl bg-brand text-white font-semibold text-[15px]">Track</button>
+    <button id="bMore" aria-label="Settings" class="w-[52px] h-[52px] shrink-0 rounded-xl bg-surface-1 border border-line grid place-items-center">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L16 2H8l-.5 2.4a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 003 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L8 22h8l.5-2.4a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>
     </button>
   </div>
 
-  <div id="sheet" class="glass" hidden>
-    <div class="sheetHead"><b>Settings</b><span class="grow"></span><button id="bSheetClose" class="glass sm">Done</button></div>
-    <label>Camera <select id="camSel"></select></label>
-    <label>Tracker <select id="modelSel">
-      <option value="lite">Lite — fastest</option>
-      <option value="full">Full — steadier</option>
-      <option value="heavy">Heavy — most accurate</option>
+  <div id="sheet" class="fixed left-2.5 right-2.5 z-40 safe-b bottom-[92px] p-4 rounded-2xl bg-surface-1 border border-line shadow-2xl max-h-[74vh] overflow-y-auto flex flex-col gap-3.5" hidden>
+    <div class="flex items-center gap-2 text-[17px] font-semibold">Settings<span class="flex-1"></span><button id="bSheetClose" class="h-9 px-4 rounded-lg bg-surface-2 border border-line text-sm">Done</button></div>
+    <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Camera<select id="camSel" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal"></select></label>
+    <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Tracker<select id="modelSel" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal">
+      <option value="lite">Lite — fastest</option><option value="full">Full — steadier</option><option value="heavy">Heavy — most accurate</option>
     </select></label>
-    <label>People <select id="peopleSel">
+    <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">People<select id="peopleSel" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal">
       <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option>
     </select></label>
-    <label class="chk"><input type="checkbox" id="skelChk" checked> Show skeleton</label>
-    <label class="chk"><input type="checkbox" id="mirrorChk"> Mirror preview</label>
-    <label>Name <input type="text" id="nameInp" placeholder="e.g. Tripod left" maxlength="40"></label>
-    <div class="hint" id="sheetInfo"></div>
+    <label class="flex items-center gap-3 text-[15px]"><input type="checkbox" id="skelChk" class="sr-only peer" checked><span class="tgl"></span>Show skeleton</label>
+    <label class="flex items-center gap-3 text-[15px]"><input type="checkbox" id="mirrorChk" class="sr-only peer"><span class="tgl"></span>Mirror preview</label>
+    <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Name<input type="text" id="nameInp" placeholder="e.g. Tripod left" maxlength="40" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal"></label>
+    <div class="text-[13px] text-ink-dim" id="sheetInfo"></div>
   </div>
 
-  <nav id="viewSeg">
-    <button data-view="stage">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8 6l1.2-2h5.6L16 6"/></svg>
-      <span>Camera</span>
+  <nav id="viewSeg" class="fixed inset-x-0 bottom-0 z-50 safe-b px-3 pt-1.5 bg-surface-1/95 border-t border-line backdrop-blur flex">
+    <button data-view="stage" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/></svg>
+      <span class="text-[10.5px] font-semibold">Camera</span>
     </button>
-    <button data-view="control">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.2" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.2" fill="currentColor" stroke="none"/></svg>
-      <span>Mixer</span>
+    <button data-view="control" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.1" fill="currentColor" stroke="none"/></svg>
+      <span class="text-[10.5px] font-semibold">Mixer</span>
     </button>
-    <button data-view="queue">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.2" stroke-linecap="round"/><circle cx="17.3" cy="17.6" r="1.9" fill="currentColor" stroke="none"/><path d="M19 10l2.5-.8V7.2L19 8z" fill="currentColor" stroke="none"/></svg>
-      <span>Queue</span>
+    <button data-view="queue" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.5" stroke-linecap="round"/><circle cx="17.2" cy="17.8" r="1.8" fill="currentColor" stroke="none"/><path d="M19 10l2.4-.7V7l-2.4.7z" fill="currentColor" stroke="none"/></svg>
+      <span class="text-[10.5px] font-semibold">Queue</span>
     </button>
-    <div id="navGlow"></div>
   </nav>
 
-  <div id="toast"></div>
+  <div id="toast" class="fixed left-1/2 z-[60] top-[calc(env(safe-area-inset-top)+3.4rem)] px-4 py-2.5 rounded-xl text-sm font-medium bg-surface-2/95 border border-line shadow-xl backdrop-blur max-w-[88vw] text-center pointer-events-none"></div>
   <script type="module" src="/remote/remote.mjs"></script>
 </body>
 </html>
