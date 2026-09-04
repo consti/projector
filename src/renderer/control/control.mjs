@@ -8,6 +8,7 @@ import { FxHost } from '/shared/fx/host.mjs';
 import { buildFxSection, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
+import { LibraryView } from '/renderer/control/library.mjs';
 import { REGISTRY as FX_REGISTRY, QUALITY } from '/shared/fx/system.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
@@ -26,6 +27,10 @@ const el = (tag, props = {}, kids = []) => {
   return n;
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const sourceBadge = (it) => {
+  const from = it.from || (it.kind === 'file' ? 'file' : it.kind === 'library' ? 'library' : 'stream');
+  return from === 'library' ? 'lib' : from === 'file' ? 'file' : from === 'stream' ? 'stream' : from;
+};
 const fmtTime = (s) => {
   if (!isFinite(s) || s < 0) s = 0;
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);
@@ -310,6 +315,58 @@ function remoteControl(op, a = {}) {
   }
 }
 
+// --------------------------------------------------------------- library ----
+const libraryView = new LibraryView($('#libraryView'), {
+  toast,
+  play: (ids, opts) => api.libraryPlay(ids, opts),
+  toggleDiscover: () => toggleDiscover(),
+});
+api.library().then((items) => libraryView.setItems(items));
+api.onLibrary((items) => libraryView.setItems(items));
+api.onLibraryProgress(({ id, progress }) => libraryView.setProgress(id, progress));
+api.onLibraryToast((m) => toast(m));
+$('#libBtn').onclick = () => libraryView.toggle();
+$('#libOpen').onclick = () => libraryView.show();
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && libraryView.open && !libraryView.editing) libraryView.hide();
+});
+
+function toggleDiscover() {
+  const on = !(S && S.playlist && S.playlist.autoDiscover);
+  api.setAutoDiscover(on);
+  syncPlaylistTools();
+  toast(on ? 'Auto-discover on — related videos will keep the show going' : 'Auto-discover off', 1800);
+}
+
+// saved playlists
+async function refreshPlaylists() {
+  const { items, current } = await api.playlistsList();
+  const sel = $('#plLoad');
+  sel.innerHTML = '<option value="">Playlists…</option>';
+  for (const pl of items) sel.appendChild(el('option', { value: pl.name, text: `${pl.name} (${pl.count})` }));
+  if (current) sel.value = current;
+}
+$('#plSave').onclick = async () => {
+  const name = await promptModal('Name this playlist');
+  if (!name) return;
+  await api.playlistsSave(name);
+  await refreshPlaylists();
+  toast('Saved playlist ' + name);
+};
+$('#plLoad').onchange = async (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  const n = await api.playlistsLoad(name);
+  toast('Loaded ' + name + ' (' + n + ')');
+};
+$('#plDiscover').onclick = () => toggleDiscover();
+function syncPlaylistTools() {
+  const on = !!(S && S.playlist && S.playlist.autoDiscover);
+  $('#plDiscover').classList.toggle('on', on);
+  libraryView.setDiscover(on);
+}
+refreshPlaylists();
+
 // -------------------------------------------------------------- transport ---
 $('#tPlay').onclick = () => api.cmd('toggle');
 $('#tNext').onclick = () => api.cmd('next');
@@ -383,7 +440,7 @@ function renderPlaylist(force) {
         title: (it.uploader ? it.uploader + ' \u2014 ' : '') + it.title + (it.error ? '\n' + it.error : ''),
       }),
       it.duration ? el('span', { class: 'd', text: fmtTime(it.duration) }) : null,
-      el('span', { class: 'k', text: it.kind === 'file' ? 'file' : 'yt' }),
+      el('span', { class: 'k ' + (it.from || it.kind), text: sourceBadge(it) }),
       el('span', {
         class: 'x', text: '\u2715', title: 'Remove', onclick: (e) => {
           e.stopPropagation();
@@ -1203,10 +1260,12 @@ function frame() {
         patternKind = g.testPattern;
         patternCanvas = makePattern(patternKind, 1920, 1080);
         stage.engine.setSource(patternCanvas, { static: true });
+        stage.engine.setSourceCrop(null);
       }
     } else {
       if (patternKind !== 'off') { patternKind = 'off'; }
       stage.engine.setSource(player.video, { gated: player.frameGated });
+      stage.engine.setSourceCrop(S.transport.source && S.transport.source.crop);
       if (S.settings.livePreview !== false) {
         player.update(S.transport, { audible: S.audioOut === 'control' });
       } else if (!player.video.paused) {

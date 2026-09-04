@@ -202,6 +202,60 @@ homography and warps the live camera view into the stage behind your mapping —
 so you can trace the paintings and couch directly over what the camera sees
 instead of guessing.
 
+## Library
+
+Instead of streaming every time, keep a local collection of music videos. Press
+**Library** in the top bar.
+
+- **Add** pastes any number of YouTube video / playlist / channel URLs (one per
+  line). Each is expanded and downloaded with yt-dlp; the **artist and song** are
+  parsed from the title (`Artist – Song (Official Video)` → *Artist* / *Song*),
+  and yt-dlp's own `artist`/`track` fields are used when present.
+- Each video gets a **poster** (a representative frame, chosen by ffmpeg so a
+  dark intro doesn't become a black thumbnail) and a 25-frame **storyboard**.
+  Hover a card — or long-press on a phone — and drag across it to **scrub a quick
+  preview** through the whole video.
+- Cards show **length, resolution** (1080p/4K…), source and tags, and download
+  progress. Select several (the circle in the corner) for **batch** actions.
+
+### Editing (non-destructive)
+
+**Edit** opens a video with three tools, none of which touch the downloaded
+file — every edit is metadata, applied live at playback and carried in the
+export:
+
+- **Crop / letterbox** — drag a rectangle over the picture, or **Auto-detect**
+  runs ffmpeg `cropdetect` to find black bars. In batch, *Detect letterbox*
+  processes the whole selection at once. The crop is applied in the projector's
+  own shader, so the un-letterboxed picture fills your mapping with no re-encode
+  and no quality loss.
+- **Trim** — set an in- and out-point; playback starts and ends there.
+- **Artist / title / tags**, and a **SponsorBlock** toggle.
+
+### SponsorBlock
+
+When a video is downloaded its SponsorBlock segments (sponsor, self-promo,
+intro/outro, non-music) are fetched from sponsor.ajay.app and **skipped during
+playback** — again without altering the file. Toggle it per video in the editor.
+
+### Playing, playlists and discovery
+
+- Play a library video with **Play**, or **Queue** it. In the playlist each item
+  is badged **lib / stream / file** so you can see at a glance what is local and
+  what is being streamed. Streaming still works exactly as before.
+- **Save list** stores the current playlist by name; the dropdown loads them
+  back. They are plain JSON in `~/Library/Application Support/projector/playlists/`.
+- **Auto-discover** keeps the show going on its own: it asks YouTube for the Mix
+  (radio) of tracks you already have and streams related videos in ahead of the
+  playhead, so a set never runs dry.
+
+### Export / import
+
+**Export** writes a small manifest of every video — its URL and how you renamed,
+tagged, trimmed and cropped it — with no media. **Import** it on another machine
+and Projector re-downloads everything and re-applies all your edits, so a whole
+curated, cropped library travels as one small file.
+
 ## Phone camera (people push the effects)
 
 The Continuity Camera path above differences frames on the Mac. The phone path
@@ -300,6 +354,7 @@ without one driving the other. Choose which screen carries the audio under
 ```
 src/main/index.js       windows, displays, transport clock, IPC, media proxy
 src/main/ytdlp.js       YouTube resolution (split video+audio, up to 4K)
+src/main/library.js      music-video library: downloads, ffmpeg thumbs/crop, sponsorblock
 src/shared/gl-engine.mjs  WebGL2 renderer: warp, edge blend, colour, masks
 src/shared/mat3.mjs     homography maths (square-to-quad, inverse)
 src/shared/mesh.mjs     warp grid, polygon offsetting
@@ -310,6 +365,7 @@ src/renderer/output/    the fullscreen output windows
 src/renderer/control/motion.mjs   camera movement -> interaction blobs
 src/renderer/control/remote.mjs   phone camera panel, alignment, pose -> interactors
 src/renderer/control/qr.mjs       QR encoder for the phone address
+src/renderer/control/library.mjs  the Library manager view and video editor
 src/main/remote.js       LAN https + WebSocket server for the phone page
 src/remote/              the page a phone opens: camera, MediaPipe pose, alignment
 src/shared/pose.mjs      body landmarks -> the joints and limbs that push

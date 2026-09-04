@@ -24,6 +24,7 @@
     <input type="range" id="tVol" min="0" max="100" value="100" style="width:70px">
     <span id="nowTitle" class="hint"></span>
     <span class="grow"></span>
+    <button class="btn" id="libBtn" title="Music video library">Library</button>
     <button class="btn" id="oProj" title="Toggle projector output window">Projector</button>
     <button class="btn" id="oTv" title="Toggle TV output window">TV</button>
     <button class="btn danger" id="gBlack" title="Blackout (B)">Blackout</button>
@@ -36,6 +37,12 @@
       <button class="btn icon" id="plClear" title="Clear playlist">&#10005;</button>
     </div>
     <div id="plInfo" class="hint"></div>
+    <div id="plTools">
+      <button class="btn sm" id="libOpen" title="Open the library">Library</button>
+      <button class="btn sm" id="plSave" title="Save this playlist">Save list</button>
+      <select id="plLoad" title="Load a saved playlist"><option value="">Playlists…</option></select>
+      <button class="btn sm" id="plDiscover" title="Keep discovering related videos and playing">Auto-discover</button>
+    </div>
     <div id="plWrap">
       <div id="plEmpty" class="hint">
         Drop video files here, or add a YouTube video / playlist URL.<br><br>
@@ -117,6 +124,7 @@
   </div>
 
   <div id="right"></div>
+  <div id="libraryView" hidden></div>
 </div>
 <script type="module" src="/renderer/control/control.mjs"></script>
 </body></html>

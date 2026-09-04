@@ -8,6 +8,7 @@ const http = require('http');
 const { Readable } = require('stream');
 const ytdlp = require('./ytdlp');
 const { RemoteServer } = require('./remote');
+const { Library } = require('./library');
 
 const ROOT = path.join(__dirname, '..');           // .../src
 const isDev = process.argv.includes('--dev');
@@ -52,6 +53,7 @@ const outputs = new Map();     // role -> BrowserWindow
 let control = null;
 let psbId = null;
 let remote = null;             // phone-camera server, see remote.js
+let library = null;            // downloaded music-video library, see library.js
 const resolveCache = new Map();
 
 // ------------------------------------------------------------- persistence -
@@ -143,6 +145,51 @@ function listMappings() {
 
 function newestMapping() { return listMappings()[0] || null; }
 
+// ----------------------------------------------------------- playlist library
+function playlistDir() {
+  const d = path.join(app.getPath('userData'), 'playlists');
+  try { fs.mkdirSync(d, { recursive: true }); } catch {}
+  return d;
+}
+function playlistFile(name) { return path.join(playlistDir(), safeMappingName(name) + '.json'); }
+function listPlaylists() {
+  let files = [];
+  try { files = fs.readdirSync(playlistDir()).filter((f) => f.endsWith('.json')); } catch {}
+  return files.map((f) => {
+    let st = null, n = 0;
+    try { st = fs.statSync(path.join(playlistDir(), f)); } catch {}
+    try { n = (JSON.parse(fs.readFileSync(path.join(playlistDir(), f), 'utf8')).items || []).length; } catch {}
+    return { name: f.replace(/\.json$/, ''), saved: st ? st.mtimeMs : 0, count: n };
+  }).sort((a, b) => b.saved - a.saved);
+}
+
+// Keep a few tracks queued ahead when auto-discover is on, so the show never
+// runs dry: relatives of what is already here, streamed straight in.
+let discovering = false;
+async function ensureDiscoveryBuffer() {
+  const pl = state.playlist;
+  if (!pl.autoDiscover || discovering || !library) return;
+  const ahead = pl.items.length - 1 - pl.index;
+  if (ahead >= 3) return;
+  discovering = true;
+  try {
+    const seeds = library.list().filter((e) => e.status === 'ready').map((e) => e.id);
+    const ytSeeds = pl.items.filter((it) => it.kind === 'youtube' || it.kind === 'library').map((it) => it.libId || it.id).filter(Boolean);
+    const exclude = pl.items.map((it) => it.libId || it.id).filter(Boolean);
+    const found = await library.discover(seeds.length ? seeds : ytSeeds, exclude, 6);
+    if (found.length) {
+      const items = found.slice(0, 4).map((f) => ({
+        kind: 'youtube', id: f.id, url: f.url, title: f.artist ? `${f.artist} — ${f.songTitle}` : f.title,
+        artist: f.artist || null, song: f.songTitle || null, from: 'stream', discovered: true, duration: f.duration || 0,
+      }));
+      const have = new Set(pl.items.map((it) => it.id));
+      pl.items = pl.items.concat(items.filter((it) => !have.has(it.id)));
+      pushState();
+    }
+  } catch (e) { console.log('[discover]', e.message); }
+  finally { discovering = false; }
+}
+
 async function loadDefaults() {
   const { pathToFileURL } = require('url');
   const m = await import(pathToFileURL(path.join(ROOT, 'shared', 'schema.mjs')).href);
@@ -195,6 +242,7 @@ function patchState(patch) {
       state[k] = patch[k];
     }
   }
+  if (library && state.settings) library.setMaxHeight(state.settings.maxHeight || 1080);
   pushState();
 }
 
@@ -220,6 +268,29 @@ function seek(sec) {
 
 function play() { setTransport({ playing: true, anchorTime: Date.now(), position: nowTime() }); }
 function pause() { setTransport({ position: nowTime(), playing: false, anchorTime: Date.now() }); }
+
+// Non-destructive playback edits: jump over SponsorBlock segments and honour a
+// trim out-point. Runs off the shared clock so both windows follow in step.
+setInterval(() => {
+  const t = state.transport;
+  if (!t || !t.playing || !t.source) return;
+  const now = nowTime();
+  const trim = t.source.trim;
+  const start = trim && trim.start ? trim.start : 0;
+  const end = trim && trim.end ? trim.end : 0;
+  if (end && now >= end - 0.15) { onEnded(); return; }
+  const skips = t.source.sponsorSkips;
+  if (skips) {
+    for (const s of skips) {
+      if (now >= s.start - 0.05 && now < s.end - 0.25) {
+        // don't skip the very tail as an "outro" if it would end the track early
+        seek(end && s.end > end - 0.5 ? end : s.end);
+        return;
+      }
+    }
+  }
+  if (start && now < start - 0.05) seek(start);
+}, 250);
 
 function cacheKey(item) {
   return item.url + '@' + (state.settings.maxHeight || 1080);
@@ -264,15 +335,19 @@ async function loadIndex(i, autoplay = true, attempt = 0) {
 
   let source;
   try {
-    if (item.kind === 'file') {
-      source = { kind: 'file', url: 'local://' + encodeURI(item.path).replace(/#/g, '%23'), title: item.title, audioUrl: null };
+    if (item.kind === 'library') {
+      source = library.playSource(item.libId);
+      if (!source) throw new Error('not downloaded yet');
+      item.duration = item.duration || source.duration;
+    } else if (item.kind === 'file') {
+      source = { kind: 'file', from: 'file', url: 'local://f' + encodeURI(item.path).replace(/#/g, '%23'), title: item.title, audioUrl: null };
     } else {
       const r = await resolveItem(item);
       const px = (v) => (v ? 'app://ui/__stream?u=' + encodeURIComponent(v) : null);
       source = {
-        kind: 'stream', url: px(r.videoUrl), audioUrl: px(r.audioUrl),
+        kind: 'stream', from: 'stream', url: px(r.videoUrl), audioUrl: px(r.audioUrl),
         previewUrl: px(r.previewUrl),      // small copy for the control window
-        title: r.title || item.title,
+        title: r.title || item.title, height: r.height || 0,
       };
       item.duration = item.duration || r.duration;
     }
@@ -285,10 +360,11 @@ async function loadIndex(i, autoplay = true, attempt = 0) {
   }
   setTransport({
     source, loading: false, error: null,
-    position: 0, anchorTime: Date.now(), playing: autoplay,
+    position: (source.trim && source.trim.start) || 0, anchorTime: Date.now(), playing: autoplay,
     duration: item.duration || 0,
   });
   if (n > 1) setTimeout(() => prefetch(idx + 1), 1200);
+  if (state.playlist.autoDiscover) setTimeout(ensureDiscoveryBuffer, 800);
 }
 
 let shuffleRecent = [];
@@ -809,7 +885,10 @@ function handleProtocols() {
   // Local media with proper HTTP range support so seeking works.
   protocol.handle('local', async (req) => {
     const u = new URL(req.url);
-    const file = decodeURIComponent(u.pathname);
+    // With the dummy 'f' host the path is the pathname; tolerate the legacy
+    // empty-host form where Chromium swallowed the first segment as the host.
+    let file = decodeURIComponent(u.pathname);
+    if (u.host && u.host !== 'f') file = '/' + u.host + file;
     let stat;
     try { stat = await fs.promises.stat(file); } catch { return new Response('not found', { status: 404 }); }
     const type = mimeOf(file);
@@ -871,6 +950,55 @@ function setupRemote() {
   state.remote = remote.info();
   setInterval(() => remote.sweep(), 1000);
   if (state.settings.remoteEnabled) remote.start();
+}
+
+// --------------------------------------------------------------- library ----
+function pushLibrary() {
+  if (control && !control.isDestroyed()) control.webContents.send('library', library.serializeAll());
+}
+function setupLibrary() {
+  library = new Library(app.getPath('userData'));
+  library.setMaxHeight(state.settings.maxHeight || 1080);
+  let t = null;
+  const push = () => { clearTimeout(t); t = setTimeout(pushLibrary, 120); };
+  library.on('change', push);
+  library.on('progress', (id, pct) => {
+    // progress alone need not rebuild the whole list; send a light update
+    if (control && !control.isDestroyed()) control.webContents.send('library:progress', { id, progress: pct });
+  });
+  library.on('toast', (msg) => { if (control && !control.isDestroyed()) control.webContents.send('library:toast', msg); });
+  library.on('ready', () => push());
+}
+
+// Add ready (or queued) library items to the transport playlist and, unless
+// told to just queue, start playing the first one.
+function addLibraryToPlaylist(ids, opts = {}) {
+  const list = (Array.isArray(ids) ? ids : [ids]).map((id) => library.get(id)).filter(Boolean);
+  if (!list.length) return state.playlist;
+  const items = list.map(libraryItem);
+  const pl = state.playlist;
+  const existingIdx = opts.play ? -1 : pl.items.length;
+  // de-duplicate by libId, keep order
+  const have = new Set(pl.items.map((it) => it.libId).filter(Boolean));
+  const fresh = items.filter((it) => !have.has(it.libId));
+  if (opts.replace) { pl.items = items; pl.index = -1; }
+  else pl.items = pl.items.concat(fresh);
+  pushState();
+  if (opts.play !== false) {
+    const first = pl.items.findIndex((it) => it.libId === items[0].libId);
+    loadIndex(first < 0 ? 0 : first, true);
+  }
+  return state.playlist;
+}
+
+function libraryItem(e) {
+  return {
+    kind: 'library', libId: e.id, id: 'lib:' + e.id, url: e.url,
+    title: e.artist ? `${e.artist} — ${e.title}` : e.title,
+    artist: e.artist || null, song: e.title || null,
+    from: 'library', duration: e.duration || 0, uploader: e.uploader || null,
+    width: e.width || 0, height: e.height || 0,
+  };
 }
 
 // ------------------------------------------------------------------- ipc ----
@@ -1019,6 +1147,47 @@ function ipc() {
     return { count: r.items.length, playlist: r.playlist, truncated: r.truncated };
   });
 
+  // -------------------------------------------------------------- library ----
+  ipcMain.handle('library:list', () => library.serializeAll());
+  ipcMain.handle('library:add', (e, urls, opts) => library.add(urls, opts || {}));
+  ipcMain.handle('library:update', (e, id, patch) => library.update(id, patch || {}));
+  ipcMain.handle('library:remove', (e, id) => { library.remove(id); return true; });
+  ipcMain.handle('library:retry', (e, id) => { library.retry(id); return true; });
+  ipcMain.handle('library:cancel', (e, id) => { library.cancel(id); library._changed(); return true; });
+  ipcMain.handle('library:detectCrop', (e, ids) => library.detectCropBatch(Array.isArray(ids) ? ids : [ids]));
+  ipcMain.handle('library:clearCrop', (e, ids) => {
+    for (const id of (Array.isArray(ids) ? ids : [ids])) { const it = library.get(id); if (it) it.crop = null; }
+    library._changed(); return true;
+  });
+  ipcMain.handle('library:reveal', (e, id) => {
+    const it = library.get(id);
+    if (it && it.file) shell.showItemInFolder(path.join(library.mediaDir, it.file));
+    else shell.showItemInFolder(library.dir);
+    return true;
+  });
+  ipcMain.handle('library:export', async () => {
+    const r = await dialog.showSaveDialog(control, {
+      title: 'Export library', defaultPath: 'projector-library.json',
+      filters: [{ name: 'Projector library', extensions: ['json'] }],
+    });
+    if (r.canceled) return null;
+    await fs.promises.writeFile(r.filePath, JSON.stringify(library.exportManifest(), null, 2));
+    return r.filePath;
+  });
+  ipcMain.handle('library:import', async () => {
+    const r = await dialog.showOpenDialog(control, {
+      title: 'Import library', properties: ['openFile'],
+      filters: [{ name: 'Projector library', extensions: ['json'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return 0;
+    const j = JSON.parse(await fs.promises.readFile(r.filePaths[0], 'utf8'));
+    return library.importManifest(j);
+  });
+  ipcMain.handle('library:discover', (e, seedIds, exclude, limit) => library.discover(seedIds, exclude, limit));
+
+  // Put a library item (or several) into the transport playlist.
+  ipcMain.handle('library:play', (e, ids, opts) => addLibraryToPlaylist(ids, opts || {}));
+
   ipcMain.handle('playlist:set', (e, items, index) => {
     state.playlist.items = items;
     if (index != null) state.playlist.index = index;
@@ -1076,6 +1245,31 @@ function ipc() {
   });
 
   ipcMain.handle('mappings:reveal', () => { shell.showItemInFolder(mappingDir()); return true; });
+
+  // ------------------------------------------------------------- playlists ---
+  ipcMain.handle('playlists:list', () => ({ items: listPlaylists(), current: state.playlist.name || null }));
+  ipcMain.handle('playlists:save', async (e, name) => {
+    const n = safeMappingName(name || state.playlist.name || 'Playlist');
+    await fs.promises.writeFile(playlistFile(n), JSON.stringify({
+      name: n, items: state.playlist.items, autoDiscover: !!state.playlist.autoDiscover,
+    }, null, 2));
+    state.playlist.name = n; pushState();
+    return n;
+  });
+  ipcMain.handle('playlists:load', async (e, name) => {
+    const j = JSON.parse(await fs.promises.readFile(playlistFile(name), 'utf8'));
+    if (!j || !Array.isArray(j.items)) throw new Error('not a playlist file');
+    state.playlist = { ...state.playlist, items: j.items, name: safeMappingName(name), autoDiscover: !!j.autoDiscover, index: -1 };
+    pushState();
+    if (j.items.length) loadIndex(0, false);
+    return j.items.length;
+  });
+  ipcMain.handle('playlists:delete', async (e, name) => { try { await fs.promises.unlink(playlistFile(name)); } catch {} return true; });
+  ipcMain.handle('playlist:autoDiscover', (e, on) => {
+    state.playlist.autoDiscover = !!on; pushState();
+    if (on) ensureDiscoveryBuffer();
+    return true;
+  });
 
   ipcMain.handle('project:open', async () => {
     const r = await dialog.showOpenDialog(control, {
@@ -1225,6 +1419,7 @@ app.whenReady().then(async () => {
   keepRegularApp();
   handleProtocols();
   setupRemote();
+  setupLibrary();
   ipc();
   buildMenu();
 

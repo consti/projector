@@ -92,10 +92,12 @@ function frame() {
       patternKind = g.testPattern;
       patternCanvas = makePattern(patternKind, 1920, 1080);
       engine.setSource(patternCanvas, { static: true });
+      engine.setSourceCrop(null);
     }
   } else {
     if (patternKind !== 'off') { patternKind = 'off'; patternCanvas = null; }
     engine.setSource(player.video, { gated: player.frameGated });
+    engine.setSourceCrop(state.transport.source && state.transport.source.crop);
     player.update(state.transport || {}, { audible: state.audioOut === role });
   }
 

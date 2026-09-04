@@ -22,6 +22,7 @@ uniform float uBlend;     // 1 = show the newest frame only
 uniform mat3 uHinv;       // output-normalized -> cell-local unit
 uniform vec4 uCellST;     // xy = st offset, zw = st scale (cell-unit -> surface st)
 uniform vec4 uSrcRect;    // xy = origin, zw = size, in video uv
+uniform vec4 uCrop;       // active-picture crop in video uv (letterbox removal)
 uniform vec4 uFeather;    // l, r, t, b in surface-st units
 uniform vec4 uAdj;        // brightness, contrast, saturation, gamma
 uniform float uHue;
@@ -52,6 +53,7 @@ void main() {
   if (uFlip.x > 0.5) sf.x = 1.0 - sf.x;
   if (uFlip.y > 0.5) sf.y = 1.0 - sf.y;
   vec2 uv = uSrcRect.xy + sf * uSrcRect.zw;
+  uv = uCrop.xy + uv * uCrop.zw;   // sample only the un-letterboxed region
 
   vec2 cuv = clamp(uv, vec2(0.0005), vec2(0.9995));
   vec4 c = texture(uTex, cuv);
@@ -144,6 +146,7 @@ uniform sampler2D uTex;
 uniform sampler2D uPrev;
 uniform float uBlend;
 uniform vec4 uRect;       // xy offset, zw scale  (uv = (vUV - off) / scale)
+uniform vec4 uCrop;       // active-picture crop in video uv
 uniform float uDim;
 out vec4 fragColor;
 void main() {
@@ -152,8 +155,9 @@ void main() {
     fragColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
   }
-  vec3 c = texture(uTex, uv).rgb;
-  if (uBlend < 0.999) c = mix(texture(uPrev, uv).rgb, c, uBlend);
+  vec2 vuv = uCrop.xy + uv * uCrop.zw;
+  vec3 c = texture(uTex, vuv).rgb;
+  if (uBlend < 0.999) c = mix(texture(uPrev, vuv).rgb, c, uBlend);
   fragColor = vec4(c * uDim, 1.0);
 }`;
 
@@ -259,6 +263,7 @@ export class Engine {
     this.overlayValid = false;
     this.hasOverlay = false;
     this.source = null;
+    this.crop = [0, 0, 1, 1];   // active-picture rect in video uv; full frame by default
     this.sourceSize = [1, 1];
     this.fx = null;                 // optional FxSystem, set by the renderer
     this._m = new Float32Array(9);
@@ -274,6 +279,14 @@ export class Engine {
    * re-uploading a 1080p texture on every animation frame instead of once per
    * decoded frame.
    */
+  // Non-destructive crop: sample only this sub-rect of the video (letterbox
+  // removal). rect is {x,y,w,h} in 0..1 video uv, or null for the full frame.
+  setSourceCrop(rect) {
+    this.crop = rect && rect.w > 0 && rect.h > 0
+      ? [rect.x || 0, rect.y || 0, rect.w, rect.h]
+      : [0, 0, 1, 1];
+  }
+
   setSource(el, opts = {}) {
     const changed = el !== this.source;
     this.source = el;
@@ -489,7 +502,8 @@ export class Engine {
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!hasSrc) return;
-      const [sw, sh] = this.sourceSize;
+      const cr = this.crop;
+      const sw = this.sourceSize[0] * cr[2], sh = this.sourceSize[1] * cr[3];
       let rect = [0, 0, 1, 1];
       const fit = opts.fit || 'contain';
       if (fit !== 'stretch') {
@@ -508,6 +522,7 @@ export class Engine {
       gl.uniform1i(this.progDirect.u.uPrev, 1);
       gl.uniform1f(this.progDirect.u.uBlend, this._blendFactor(g.smoothMotion));
       gl.uniform4f(this.progDirect.u.uRect, rect[0], rect[1], rect[2], rect[3]);
+      gl.uniform4f(this.progDirect.u.uCrop, cr[0], cr[1], cr[2], cr[3]);
       gl.uniform1f(this.progDirect.u.uDim, dim);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
       return;
@@ -533,6 +548,7 @@ export class Engine {
       gl.uniform1i(this.progSurface.u.uPrev, 1);
       gl.uniform1f(this.progSurface.u.uBlend, this._blendFactor(g.smoothMotion));
       const U = this.progSurface.u;
+      gl.uniform4f(U.uCrop, this.crop[0], this.crop[1], this.crop[2], this.crop[3]);
 
       for (const s of project.surfaces || []) {
         if (!s.enabled) continue;
