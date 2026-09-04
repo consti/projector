@@ -1,0 +1,22 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Output</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;cursor:none}
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+  #ident{position:fixed;inset:0;display:none;place-items:center;font:700 8vw -apple-system,sans-serif;
+    color:#fff;background:rgba(0,80,255,.85);text-transform:uppercase;letter-spacing:.05em;text-align:center}
+  #ident.on{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0}
+  #ident .sub{font:600 2.4vw -apple-system,sans-serif;letter-spacing:.02em;opacity:.85;margin-top:.5vh;text-transform:none}
+  #hint{position:fixed;top:3vh;left:50%;transform:translateX(-50%);color:#cfe;
+    background:#0b1a2acc;border:1px solid #24506e;border-radius:999px;padding:8px 18px;
+    font:500 1.6vh -apple-system,sans-serif;transition:opacity .6s;pointer-events:none;z-index:5}
+  #hint.gone{opacity:0}
+  #msg{position:fixed;left:0;right:0;bottom:6vh;text-align:center;color:#8ab;font:500 2vh -apple-system,sans-serif;
+    text-shadow:0 1px 3px #000;pointer-events:none}
+</style></head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="ident"></div>
+  <div id="msg"></div>
+  <script type="module" src="/renderer/output/output.mjs"></script>
+</body></html>

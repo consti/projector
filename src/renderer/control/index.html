@@ -1,0 +1,106 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Projector</title>
+<link rel="stylesheet" href="/renderer/control/control.css"></head>
+<body>
+<div id="app">
+  <div id="drag"><b>Projector</b><span id="dragInfo"></span></div>
+
+  <div id="top">
+    <div class="seg">
+      <button class="btn icon" id="tPrev" title="Previous (Cmd+Left)">&#9198;</button>
+      <button class="btn icon" id="tPlay" title="Play / Pause (Space)" style="min-width:38px">&#9654;</button>
+      <button class="btn icon" id="tNext" title="Next (Cmd+Right)">&#9197;</button>
+    </div>
+    <span class="time" id="tTime">0:00 / 0:00</span>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <button class="btn icon" id="tRepeat" title="Repeat">&#8635;</button>
+    <button class="btn icon" id="tShuffle" title="Shuffle">&#8644;</button>
+    <select id="tRate" title="Speed">
+      <option value="0.25">0.25x</option><option value="0.5">0.5x</option>
+      <option value="1" selected>1x</option><option value="1.5">1.5x</option>
+      <option value="2">2x</option>
+    </select>
+    <button class="btn icon" id="tMute" title="Mute">&#128266;</button>
+    <input type="range" id="tVol" min="0" max="100" value="100" style="width:70px">
+    <span id="nowTitle" class="hint"></span>
+    <span class="grow"></span>
+    <button class="btn" id="oProj" title="Toggle projector output window">Projector</button>
+    <button class="btn" id="oTv" title="Toggle TV output window">TV</button>
+    <button class="btn danger" id="gBlack" title="Blackout (B)">Blackout</button>
+  </div>
+
+  <div id="left">
+    <div id="plHead">
+      <button class="btn grow" id="addFiles">Add files</button>
+      <button class="btn grow" id="addUrl">Add URL</button>
+      <button class="btn icon" id="plClear" title="Clear playlist">&#10005;</button>
+    </div>
+    <div id="plInfo" class="hint"></div>
+    <div id="plWrap">
+      <div id="plEmpty" class="hint">
+        Drop video files here, or add a YouTube video / playlist URL.<br><br>
+        Double-click an item to play it.
+      </div>
+      <div id="pl"></div>
+    </div>
+    <div id="cam">
+      <div class="row"><span class="hint grow">Camera</span><span class="hint mono" id="camStatus">Off</span></div>
+      <select id="camSelect"><option value="">Select camera</option></select>
+      <div id="camView">
+        <video id="camVideo" muted playsinline></video>
+        <div id="camPick"><canvas id="camPickCanvas" style="width:100%;height:100%"></canvas></div>
+      </div>
+      <div class="row">
+        <button class="btn grow" id="camAlign">Align to wall</button>
+        <button class="btn" id="camShot" title="Save a still">Snap</button>
+        <button class="btn" id="camOff" title="Stop camera">&#9632;</button>
+      </div>
+      <div class="ctl"><label>Overlay</label>
+        <input type="range" id="camOpacity" min="0" max="100" value="50">
+        <span class="val" id="camOpacityV">50%</span></div>
+      <div class="hint" id="camHint">Use Continuity Camera: put your iPhone on a stand facing the wall,
+        then pick it above. "Align to wall" projects markers and asks you to click them.</div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div id="tools">
+      <div class="seg">
+        <button class="btn" data-tool="select" title="Select / move (V)">Select</button>
+        <button class="btn" data-tool="addSurface" title="Draw a new projection area (S)">+ Area</button>
+        <button class="btn" data-tool="maskRect" title="Blackout rectangle (M)">+ Mask</button>
+        <button class="btn" data-tool="maskPoly" title="Blackout polygon (P)">+ Shape</button>
+      </div>
+      <button class="btn" id="dupBtn" title="Duplicate (Cmd+D)">Duplicate</button>
+      <button class="btn danger" id="delBtn" title="Delete (Backspace)">Delete</button>
+      <span style="width:6px"></span>
+      <button class="btn" id="handlesBtn" title="Show handles">Handles</button>
+      <button class="btn" id="guidesBtn" title="Show outlines on the projector itself">Wall guides</button>
+      <select id="patSelect" title="Calibration pattern">
+        <option value="off">No test pattern</option>
+        <option value="grid">Grid</option>
+        <option value="corners">Corner markers</option>
+        <option value="bars">Colour bars</option>
+        <option value="circles">Circles</option>
+        <option value="checker">Checkerboard</option>
+        <option value="greyramp">Grey ramp</option>
+      </select>
+      <span class="grow"></span>
+      <button class="btn" id="fitBtn" title="Fit view">Fit</button>
+      <button class="btn" id="shotBtn" title="Capture what the projector is showing">Capture</button>
+    </div>
+    <div id="view">
+      <div id="frame">
+        <div id="camLayer"><video id="camWarp" muted playsinline></video></div>
+        <canvas id="glc"></canvas>
+        <canvas id="ovc"></canvas>
+      </div>
+      <div id="stageInfo"></div>
+      <div id="toast"></div>
+    </div>
+  </div>
+
+  <div id="right"></div>
+</div>
+<script type="module" src="/renderer/control/control.mjs"></script>
+</body></html>
