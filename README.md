@@ -202,6 +202,44 @@ homography and warps the live camera view into the stage behind your mapping —
 so you can trace the paintings and couch directly over what the camera sees
 instead of guessing.
 
+## Phone camera (people push the effects)
+
+The Continuity Camera path above differences frames on the Mac. The phone path
+does better: the phone runs a body tracker on its own camera and only sends
+where people are, so the projector reacts to arms and hands, not just to
+"something moved".
+
+1. **Share on Wi-Fi** in the left panel starts a small server inside the app
+   and shows its address and a QR code. Open it on any phone on the same
+   network. The page is served over https with a certificate the app made
+   itself, so the phone asks once whether to trust it — browsers only open a
+   camera on a secure page.
+2. Put the phone on a stand so the whole projection is in its frame and start
+   its camera (the rear one by default).
+3. Press **Align** — on the phone or in the app. The projector shows the four
+   coloured corner squares, the phone looks for them and drops a numbered
+   handle on each; drag them onto the squares' centres (a magnifier appears
+   while you drag) and press *Done*. That solves the camera-to-projector
+   homography, which is remembered with your settings, so a phone left on its
+   tripod stays aligned across restarts. Rotating the phone invalidates it and
+   the app says so.
+4. Press **Track**. Under *Effects → Camera interaction*, turn on **People push
+   things** and choose what a person pushes with: *hands*, *head and arms*, or
+   the *whole body*. Limbs become chains of circles along the bone, sized by how
+   big the person looks on the wall, so a sweeping forearm shoves everything in
+   its path. **Show tracking** draws the skeletons over the stage.
+
+The tracker is MediaPipe's pose landmarker running in the phone's browser
+(GPU where available, up to four people; pick *lite / full / heavy* in the
+phone's settings sheet). By default the phone loads it from the internet the
+first time; run `npm run fetch-models` to bundle it into `assets/mediapipe/`
+and the app serves it itself, for venues without internet.
+
+Landmarks travel as JSON over a WebSocket at 30 Hz — a few kilobytes a second —
+and the app maps them through the homography into output space, differences
+successive packets for velocity, and hands the result to the same interactor
+path the pointer uses. Several phones can be connected at once; they all push.
+
 ## Outputs
 
 | Role | What it does |
@@ -270,6 +308,12 @@ src/shared/patterns.mjs calibration patterns
 src/renderer/control/   the editor UI
 src/renderer/output/    the fullscreen output windows
 src/renderer/control/motion.mjs   camera movement -> interaction blobs
+src/renderer/control/remote.mjs   phone camera panel, alignment, pose -> interactors
+src/renderer/control/qr.mjs       QR encoder for the phone address
+src/main/remote.js       LAN https + WebSocket server for the phone page
+src/remote/              the page a phone opens: camera, MediaPipe pose, alignment
+src/shared/pose.mjs      body landmarks -> the joints and limbs that push
+scripts/fetch-models.sh  bundle the pose tracker so phones need no internet
 
 src/shared/fx/system.mjs     the effect stack: layers, clock, compositing, bloom
 src/shared/fx/field.mjs      occluders -> signed distance field + collision triangles

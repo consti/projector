@@ -2,12 +2,15 @@ import { Stage } from '/renderer/control/stage.mjs';
 import { CameraPanel } from '/renderer/control/camera.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
-import { defaultProject, defaultSurface, defaultMask, ensureFx, uid } from '/shared/schema.mjs';
+import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLayer } from '/shared/schema.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
-import { buildFxSection } from '/renderer/control/fxpanel.mjs';
+import { buildFxSection, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
-import { REGISTRY as FX_REGISTRY } from '/shared/fx/system.mjs';
+import { RemotePanel } from '/renderer/control/remote.mjs';
+import { REGISTRY as FX_REGISTRY, QUALITY } from '/shared/fx/system.mjs';
+
+const QUALITY_KEYS = Object.keys(QUALITY);
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, props = {}, kids = []) => {
@@ -81,6 +84,7 @@ let fxSendAt = 0;
 let lastAudioSend = 0;
 let motion = null;
 let motionActive = 0;
+let phonePeople = 0;
 function pumpInteractors() {
   const fx = ensureFx(project);
   const on = fx.enabled && fx.interact.pointer !== false;
@@ -113,10 +117,23 @@ function pumpInteractors() {
     motionActive = 0;
   }
 
+  // phone: bodies tracked on a phone camera, aligned to the wall the same way
+  phonePeople = 0;
+  if (fx.enabled && fx.interact && fx.interact.camera && remote.tracker.calibrated) {
+    const blobs = remote.tracker.interactors({
+      aspect: fxAspect(),
+      radius: fx.interact.radius || 0.07,
+      strength: (fx.interact.strength == null ? 1 : fx.interact.strength) *
+                (fx.interact.cameraForce == null ? 1 : fx.interact.cameraForce),
+      parts: fx.interact.phoneParts || 'body',
+    });
+    if (blobs.length) { list = list.concat(blobs); phonePeople = remote.tracker.people.length; }
+  }
+
   fxHost.setInteractors(list);
   // relay to the output windows, but not at full frame rate
   const now = performance.now();
-  if (on && now - fxSendAt > 33) {
+  if ((on || list.length) && now - fxSendAt > 33) {
     fxSendAt = now;
     api.fxInteract(list);
   }
@@ -190,6 +207,108 @@ $('#camShot').onclick = async () => {
   const f = await api.saveCapture(c.toDataURL('image/png'), 'camera');
   toast('Saved ' + f);
 };
+
+// -------------------------------------------------------------------- phone --
+const remote = new RemotePanel({
+  status: $('#phStatus'), toggle: $('#phToggle'), align: $('#phAlign'), clear: $('#phClear'),
+  qrWrap: $('#phQrWrap'), qr: $('#phQr'), url: $('#phUrl'), clients: $('#phClients'), hint: $('#phHint'),
+}, {
+  toast,
+  setPattern: (p) => { project.global.testPattern = p; pushProject(true); $('#patSelect').value = p; },
+  settings: () => (S && S.settings) || {},
+  patchSettings: (p) => api.patchState({ settings: p }),
+  aspect: () => fxAspect(),
+  fx: () => project && project.fx,
+  // the phone's Control tab drives the same effects the desktop panel does
+  deck: () => deckState(),
+  catalog: () => deckCatalog(),
+  control: (op, a) => remoteControl(op, a),
+});
+
+// A compact snapshot of everything the phone deck can control.
+function deckState() {
+  const fx = ensureFx(project);
+  const t = (S && S.transport) || {};
+  return {
+    transport: {
+      playing: !!t.playing, title: (t.source && t.source.title) || '',
+      has: !!(t.source), muted: !!t.muted, volume: t.volume == null ? 1 : t.volume,
+    },
+    fx: {
+      enabled: !!fx.enabled,
+      quality: fx.quality || 'high',
+      gravity: fx.gravity == null ? 1.2 : fx.gravity,
+      wind: fx.windX || 0,
+      timeScale: fx.timeScale == null ? 1 : fx.timeScale,
+      layers: (fx.layers || []).map((L) => {
+        const s = FX_REGISTRY.get(L.type) || {};
+        return {
+          id: L.id, type: L.type, name: L.name || s.label || L.type,
+          opacity: L.opacity == null ? 1 : L.opacity, on: L.enabled !== false,
+          actions: (s.actions || []).map((x) => ({ name: x.name, label: x.label })),
+        };
+      }),
+    },
+    blackout: !!project.global.blackout,
+  };
+}
+
+// The static menus (effect types, scene names, qualities), sent once on hello.
+let DECK_CATALOG = null;
+function deckCatalog() {
+  if (DECK_CATALOG) return DECK_CATALOG;
+  const effects = [...FX_REGISTRY.values()]
+    .map((s) => ({ type: s.type, label: s.label || s.type }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  DECK_CATALOG = {
+    effects,
+    scenes: SCENES.map((s) => s.name),
+    qualities: [...QUALITY_KEYS],
+  };
+  return DECK_CATALOG;
+}
+
+// Apply one control intent from a phone against the live project.
+function remoteControl(op, a = {}) {
+  const fx = ensureFx(project);
+  const layer = (id) => (fx.layers || []).find((L) => L.id === id);
+  switch (op) {
+    case 'transport': api.cmd(a.cmd, a.arg); return;
+    case 'fxEnabled': fx.enabled = !!a.on; pushProject(true); buildInspector(); return;
+    case 'triggerAll':
+      if (fx.enabled) for (const L of fx.layers || []) {
+        const s = FX_REGISTRY.get(L.type);
+        if (s && s.actions && s.actions[0]) fxAction(L.id, s.actions[0].name);
+      }
+      return;
+    case 'triggerLayer': {
+      const L = layer(a.id); if (!L) return;
+      const s = FX_REGISTRY.get(L.type);
+      if (s && s.actions && s.actions[0]) fxAction(L.id, s.actions[0].name);
+      return;
+    }
+    case 'layerAction': if (layer(a.id)) fxAction(a.id, a.name); return;
+    case 'layerOpacity': { const L = layer(a.id); if (L) { L.opacity = Math.max(0, Math.min(1, a.value)); pushProject(); } return; }
+    case 'layerOn': { const L = layer(a.id); if (L) { L.enabled = !!a.on; pushProject(true); buildInspector(); } return; }
+    case 'removeLayer': fx.layers = (fx.layers || []).filter((L) => L.id !== a.id); pushProject(true); buildInspector(); return;
+    case 'addLayer':
+      if (!FX_REGISTRY.get(a.type)) return;
+      fx.layers = fx.layers || []; fx.layers.push(defaultFxLayer(a.type)); fx.enabled = true;
+      pushProject(true); buildInspector(); return;
+    case 'scene': {
+      const s = SCENES.find((x) => x.name === a.name); if (!s) return;
+      applyScene(fx, s); pushProject(true); buildInspector(); toast(s.note || s.name, 1500); return;
+    }
+    case 'clearLayers': fx.layers = []; pushProject(true); buildInspector(); return;
+    case 'world':
+      if (a.key === 'gravity') fx.gravity = a.value;
+      else if (a.key === 'wind') fx.windX = a.value;
+      else if (a.key === 'timeScale') fx.timeScale = a.value;
+      pushProject(); return;
+    case 'quality': if (QUALITY_KEYS.includes(a.value)) { fx.quality = a.value; pushProject(true); buildInspector(); } return;
+    case 'blackout': project.global.blackout = !project.global.blackout; pushProject(true); return;
+  }
+}
 
 // -------------------------------------------------------------- transport ---
 $('#tPlay').onclick = () => api.cmd('toggle');
@@ -441,6 +560,7 @@ function fxSection() {
     sendAction: (id, name, arg) => fxAction(id, name, arg),
     stats: () => fxHost.stats(),
     cameraReady: () => !!(camera.live && camera.homography),
+    phoneState: () => ({ running: remote.info.running, ready: remote.ready, live: remote.tracker.live, people: phonePeople }),
     audio: () => fxHost.features(),
     onFrame: (fn) => frameUpdaters.push(fn),
     // register an updater and run it now, so nothing shows blank until the
@@ -1013,6 +1133,7 @@ function applyState(s) {
     project.global.refW = w; project.global.refH = h;
   }
   ensureFx(project);
+  remote.applyState(s);
   player.setSource(s.transport.source, { preview: usePreviewStream() });
   renderPlaylist();
   updateTop();
@@ -1065,7 +1186,7 @@ window.__player = player;
 window.__dev = {
   get project() { return project; },
   get state() { return S; },
-  stage, camera, player, fxHost,
+  stage, camera, remote, player, fxHost,
   fxAction,
   push: pushProject,
   rebuild: buildInspector,
@@ -1105,10 +1226,12 @@ function frame() {
     }
     stage.engine.render(project, { mode: 'mapped', dimOverride: 1 });
     stage.draw();
-    if (motion && project.fx?.interact?.cameraDebug && project.fx.interact.camera) {
+    if (project.fx?.interact?.cameraDebug && project.fx.interact.camera) {
       const c = $('#ovc'), dpr = window.devicePixelRatio || 1;
-      motion.drawDebugOver(c.getContext('2d'), c.width / dpr, c.height / dpr, fxAspect());
+      if (motion) motion.drawDebugOver(c.getContext('2d'), c.width / dpr, c.height / dpr, fxAspect());
+      if (remote.tracker.live) remote.tracker.drawDebugOver(c.getContext('2d'), c.width / dpr, c.height / dpr, fxAspect(), fxHost.interactors);
     }
+    remote.frame();
 
     const t = S.transport;
     const now = targetTime(t);

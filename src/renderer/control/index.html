@@ -61,6 +61,22 @@
       <div class="hint" id="camHint">Use Continuity Camera: put your iPhone on a stand facing the wall,
         then pick it above. "Align to wall" projects markers and asks you to click them.</div>
     </div>
+    <div id="phone">
+      <div class="row"><span class="hint grow">Phone camera</span><span class="hint mono" id="phStatus">Off</span></div>
+      <div class="row nowrap">
+        <button class="btn grow" id="phToggle">Share on Wi-Fi</button>
+        <button class="btn" id="phAlign" title="Ask the phone to align its camera to the wall" disabled>Align</button>
+        <button class="btn icon" id="phClear" title="Forget the phone alignment" hidden>&#10005;</button>
+      </div>
+      <div id="phQrWrap" hidden>
+        <canvas id="phQr"></canvas>
+        <div class="grow">
+          <div class="mono" id="phUrl" title="Click to copy"></div>
+          <div class="hint" id="phClients"></div>
+        </div>
+      </div>
+      <div class="hint" id="phHint"></div>
+    </div>
   </div>
 
   <div id="stage">

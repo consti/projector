@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Projector · phone camera</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="/remote/remote.css">
+</head>
+<body>
+  <video id="v" playsinline muted autoplay></video>
+  <canvas id="ov"></canvas>
+
+  <div id="top">
+    <span id="dot" class="dot"></span>
+    <span id="status">Connecting…</span>
+    <span class="grow"></span>
+    <span id="meter" class="mono"></span>
+    <span id="viewSeg" class="seg2">
+      <button data-view="stage" class="on">Camera</button>
+      <button data-view="control">Control</button>
+    </span>
+  </div>
+
+  <div id="deck" hidden></div>
+
+  <div id="msg">
+    <div id="msgText">Tap to start the camera</div>
+    <div id="msgSub" class="sub"></div>
+  </div>
+
+  <div id="alignBar" hidden>
+    <div class="hint">Drag each handle onto the matching coloured square projected on the wall. The
+      number inside each square is the handle's number.</div>
+    <div class="row">
+      <button id="bAuto">Find markers</button>
+      <button id="bAlignCancel">Cancel</button>
+      <button id="bAlignDone" class="primary">Done</button>
+    </div>
+  </div>
+
+  <div id="bottom">
+    <button id="bCam" title="Switch camera">&#8635; Camera</button>
+    <button id="bAlign">Align</button>
+    <button id="bTrack" class="primary">Track</button>
+    <button id="bMore" title="Settings">&#8943;</button>
+  </div>
+
+  <div id="sheet" hidden>
+    <div class="sheetHead"><b>Settings</b><span class="grow"></span><button id="bSheetClose">Done</button></div>
+    <label>Camera <select id="camSel"></select></label>
+    <label>Tracker <select id="modelSel">
+      <option value="lite">Lite — fastest</option>
+      <option value="full">Full — steadier</option>
+      <option value="heavy">Heavy — most accurate</option>
+    </select></label>
+    <label>People <select id="peopleSel">
+      <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option>
+    </select></label>
+    <label class="chk"><input type="checkbox" id="skelChk" checked> Show skeleton</label>
+    <label class="chk"><input type="checkbox" id="mirrorChk"> Mirror preview</label>
+    <label>Name <input type="text" id="nameInp" placeholder="e.g. Tripod left" maxlength="40"></label>
+    <div class="hint" id="sheetInfo"></div>
+  </div>
+
+  <div id="toast"></div>
+  <script type="module" src="/remote/remote.mjs"></script>
+</body>
+</html>

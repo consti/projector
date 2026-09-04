@@ -62,6 +62,7 @@ export function defaultFx() {
       cameraSensitivity: 1,
       cameraForce: 1,
       cameraDebug: false,
+      phoneParts: 'body',       // which joints a phone-tracked person pushes with: hands | arms | body
     },
     layers: [],
   };
@@ -175,7 +176,11 @@ export function defaultState() {
       fitMode: 'contain',      // for 'fill' outputs: contain | cover | stretch
       previewQuality: 'auto',  // auto | low | full — the control window's copy
       maxHeight: 1080,         // cap for YouTube stream resolution
+      remoteEnabled: false,    // serve the phone-camera page on the LAN
+      remotePort: 9223,
+      remoteCalib: null,       // { pts: 4 camera-normalized marker centres, w, h, H: camera->output homography }
     },
+    remote: { running: false, port: 9223, secure: false, urls: [], clients: [], error: null, models: false },
   };
 }
 

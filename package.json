@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "npx --yes @electron/packager@18 . Projector --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=com.oozou.projector --icon=build/icon.icns --extend-info=build/Info.extend.plist --app-version=0.1.0 --ignore='^/(dist|build/icon.iconset|\\.git)' --prune=true"
+    "build": "npx --yes @electron/packager@18 . Projector --platform=darwin --arch=arm64 --out=dist --overwrite --app-bundle-id=com.oozou.projector --icon=build/icon.icns --extend-info=build/Info.extend.plist --app-version=0.1.0 --ignore='^/(dist|build/icon.iconset|\\.git)' --prune=true",
+    "fetch-models": "sh scripts/fetch-models.sh"
   },
   "license": "MIT",
   "devDependencies": {

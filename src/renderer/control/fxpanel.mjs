@@ -6,6 +6,23 @@ import { REGISTRY, QUALITY } from '/shared/fx/system.mjs';
 import { SOURCES } from '/shared/fx/audio.mjs';
 import { defaultFxLayer } from '/shared/schema.mjs';
 import { EFFECTS } from '/shared/fx/effects/index.mjs';
+import { PART_OPTIONS } from '/shared/pose.mjs';
+
+// Apply a scene preset to an fx config in place; returns the id of the first
+// layer (for selection). Shared by the desktop panel and the phone deck.
+export function applyScene(fx, s) {
+  fx.layers = s.layers.map(([type, params, extra]) => defaultFxLayer(type, { ...params }, extra ? {
+    mod: (extra.mod || []).map((m) => ({ ...m })),
+    trig: extra.trig ? { ...extra.trig } : null,
+  } : {}));
+  fx.enabled = true;
+  if (s.audio) {
+    fx.audio.enabled = true;
+    if (s.audio.globalSrc) fx.audio.globalSrc = s.audio.globalSrc;
+    if (s.audio.globals) Object.assign(fx.audio.globals, s.audio.globals);
+  }
+  return fx.layers[0] ? fx.layers[0].id : null;
+}
 
 export const SCENES = [
   { name: 'Flood the room', layers: [['water', {}]], note: 'Water pours in and finds its level around every masked shape.' },
@@ -214,14 +231,25 @@ export function buildFxSection(ui) {
     (v) => (fx.interact.cameraSensitivity = v), { min: 0.2, max: 4, fmt: (v) => v.toFixed(2) }));
   rows.push(ui.slider('Push strength', () => fx.interact.cameraForce,
     (v) => (fx.interact.cameraForce = v), { min: 0, max: 4, fmt: (v) => v.toFixed(2) }));
+  rows.push(ui.selectRow('Phone pushes with', PART_OPTIONS, () => fx.interact.phoneParts || 'body',
+    (v) => { fx.interact.phoneParts = v; ui.push(true); }));
   const camState = el('div', { class: 'hint' });
   ui.live(() => {
     const r = ui.cameraReady();
-    camState.textContent = r
-      ? (fx.interact.camera ? `Tracking ${ui.motionBlobs()} moving region${ui.motionBlobs() === 1 ? '' : 's'}.`
-                            : 'Camera is aligned and ready.')
-      : 'Start a camera and press "Align to wall" first — the tracker reuses that alignment to know where in the projected picture each movement is.';
-    camState.style.color = r ? '' : 'var(--dim2)';
+    const ph = ui.phoneState ? ui.phoneState() : { ready: false };
+    let txt;
+    if (fx.interact.camera && (r || ph.ready)) {
+      const bits = [];
+      if (r) bits.push(`${ui.motionBlobs()} moving region${ui.motionBlobs() === 1 ? '' : 's'} on the Mac camera`);
+      if (ph.ready) bits.push(ph.live ? `${ph.people} ${ph.people === 1 ? 'person' : 'people'} via the phone` : 'phone aligned, nobody in view');
+      txt = 'Tracking ' + bits.join(', ') + '.';
+    } else if (r || ph.ready) {
+      txt = (r && ph.ready ? 'Camera and phone are' : r ? 'Camera is' : 'Phone is') + ' aligned and ready.';
+    } else {
+      txt = 'Align a camera first: pick a Mac camera and press "Align to wall", or share on Wi-Fi and align a phone (both in the left panel). The alignment tells the tracker where in the picture each person is.';
+    }
+    camState.textContent = txt;
+    camState.style.color = r || ph.ready ? '' : 'var(--dim2)';
   });
   rows.push(camState);
 
@@ -240,17 +268,8 @@ export function buildFxSection(ui) {
     grid.appendChild(el('button', {
       class: 'btn sm', text: s.name, title: s.note || '',
       onclick: () => {
-        fx.layers = s.layers.map(([type, params, extra]) => defaultFxLayer(type, { ...params }, extra ? {
-          mod: (extra.mod || []).map((m) => ({ ...m })),
-          trig: extra.trig ? { ...extra.trig } : null,
-        } : {}));
-        fx.enabled = true;
-        if (s.audio) {
-          fx.audio.enabled = true;
-          if (s.audio.globalSrc) fx.audio.globalSrc = s.audio.globalSrc;
-          if (s.audio.globals) Object.assign(fx.audio.globals, s.audio.globals);
-        }
-        ui.selectLayer(fx.layers[0] ? fx.layers[0].id : null);
+        const first = applyScene(fx, s);
+        ui.selectLayer(first);
         ui.push(true);
         ui.rebuild();
         ui.toast(s.note || s.name);

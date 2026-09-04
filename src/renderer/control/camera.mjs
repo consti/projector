@@ -2,7 +2,7 @@ import * as M from '/shared/mat3.mjs';
 
 // The four corner-marker centres of the 'corners' calibration pattern,
 // in output-normalized coordinates (marker size is 16% of the short side).
-const MARKERS = [[0.045, 0.08], [0.955, 0.08], [0.955, 0.92], [0.045, 0.92]];
+export const MARKERS = [[0.045, 0.08], [0.955, 0.08], [0.955, 0.92], [0.045, 0.92]];
 const MARK_NAMES = ['red (top-left)', 'green (top-right)', 'blue (bottom-right)', 'yellow (bottom-left)'];
 const LOCAL = 1000;   // element-local coordinate span for the warped layer
 
