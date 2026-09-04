@@ -188,8 +188,14 @@ export class Player {
     }
 
     const want = targetTime(t);
-    this._sync(this.video, want, t);
-    if (this.separateAudio) this._sync(this.audio, want, t, true);
+    // Whichever element is actually producing sound gets the gentle rate
+    // treatment: a combined mp4 carries its audio on the video element, and
+    // nudging that element's rate makes Chromium time-stretch the audio
+    // (preservesPitch), which crackles. A muted element can be nudged hard for
+    // tight visual sync without any audible cost.
+    const videoAudible = !this.separateAudio && audible;
+    this._sync(this.video, want, t, videoAudible);
+    if (this.separateAudio) this._sync(this.audio, want, t, audible);
     this._watch(this.video, 'video', want, t);
     if (this.separateAudio) this._watch(this.audio, 'audio', want, t);
   }
@@ -211,7 +217,7 @@ export class Player {
     if (this.onResync) this.onResync(mediaTime);
   }
 
-  _sync(el, want, t, isAudio = false) {
+  _sync(el, want, t, gentle = false) {
     if (!el.getAttribute('src')) return;
     if (el.readyState < 1) return;
     const dur = el.duration;
@@ -232,14 +238,15 @@ export class Player {
       return;
     }
 
-    // A rate change is invisible on video but *audible* on audio — a few percent
-    // is a wavering pitch-bend. So the audio track gets a wide deadband (a small
+    // A rate change is invisible on video but *audible* on the element that
+    // carries the sound — a few percent makes Chromium time-stretch the audio,
+    // which crackles. So the audible element gets a wide deadband (a small
     // steady offset from the clock is imperceptible, well inside A/V tolerance)
-    // and, when it does correct, a gentle cap instead of video's ±6%. This keeps
-    // it at exactly 1x almost always rather than perpetually chasing the clock.
-    const dead = isAudio ? 0.22 : 0.04;
-    const maxDev = isAudio ? 0.015 : 0.06;
-    const gain = isAudio ? 0.15 : 0.5;
+    // and, when it does correct, a gentle cap instead of the muted video's ±6%.
+    // This keeps its rate at exactly 1x almost always.
+    const dead = gentle ? 0.22 : 0.04;
+    const maxDev = gentle ? 0.015 : 0.06;
+    const gain = gentle ? 0.15 : 0.5;
 
     const drift = el.currentTime - target;
     const a = Math.abs(drift);
