@@ -147,7 +147,7 @@ export class Player {
 
     const want = targetTime(t);
     this._sync(this.video, want, t);
-    if (this.separateAudio) this._sync(this.audio, want, t);
+    if (this.separateAudio) this._sync(this.audio, want, t, true);
     this._watch(this.video, 'video', want, t);
     if (this.separateAudio) this._watch(this.audio, 'audio', want, t);
   }
@@ -169,7 +169,7 @@ export class Player {
     if (this.onResync) this.onResync(mediaTime);
   }
 
-  _sync(el, want, t) {
+  _sync(el, want, t, isAudio = false) {
     if (!el.getAttribute('src')) return;
     if (el.readyState < 1) return;
     const dur = el.duration;
@@ -190,6 +190,15 @@ export class Player {
       return;
     }
 
+    // A rate change is invisible on video but *audible* on audio — a few percent
+    // is a wavering pitch-bend. So the audio track gets a wide deadband (a small
+    // steady offset from the clock is imperceptible, well inside A/V tolerance)
+    // and, when it does correct, a gentle cap instead of video's ±6%. This keeps
+    // it at exactly 1x almost always rather than perpetually chasing the clock.
+    const dead = isAudio ? 0.22 : 0.04;
+    const maxDev = isAudio ? 0.015 : 0.06;
+    const gain = isAudio ? 0.15 : 0.5;
+
     const drift = el.currentTime - target;
     const a = Math.abs(drift);
     if (a > 0.35) {
@@ -206,9 +215,9 @@ export class Player {
         el.currentTime = target;
       }
       el.playbackRate = t.rate;
-    } else if (t.playing && a > 0.04) {
-      // trim playback speed slightly instead of jumping (inaudible, invisible)
-      el.playbackRate = Math.max(t.rate * 0.94, Math.min(t.rate * 1.06, t.rate * (1 - drift * 0.5)));
+    } else if (t.playing && a > dead) {
+      // trim playback speed slightly instead of jumping
+      el.playbackRate = Math.max(t.rate * (1 - maxDev), Math.min(t.rate * (1 + maxDev), t.rate * (1 - drift * gain)));
     } else {
       el.playbackRate = t.rate;
     }
