@@ -363,9 +363,9 @@ ov.addEventListener('pointercancel', endDrag);
 // ---------------------------------------------------------------- ui -----
 function ui() {
   const dot = $('#dot');
-  dot.classList.toggle('bg-good', st.connected);
-  dot.classList.toggle('bg-warn', !st.connected);
-  dot.classList.remove('bg-bad');
+  dot.classList.add('bg-white');
+  dot.classList.toggle('opacity-100', st.connected);
+  dot.classList.toggle('opacity-30', !st.connected);
   let s;
   if (!st.connected) s = 'Connecting to the app…';
   else if (!st.stream) s = 'Connected · camera off';
@@ -377,8 +377,13 @@ function ui() {
   $('#status').textContent = s;
   const tb = $('#bTrack');
   tb.textContent = st.tracking ? 'Stop tracking' : 'Track';
-  tb.classList.toggle('bg-bad', st.tracking);
-  tb.classList.toggle('bg-brand', !st.tracking);
+  // tracking = outlined; idle = filled white (the primary action)
+  tb.classList.toggle('bg-transparent', st.tracking);
+  tb.classList.toggle('border', st.tracking);
+  tb.classList.toggle('border-white/30', st.tracking);
+  tb.classList.toggle('text-ink', st.tracking);
+  tb.classList.toggle('bg-white', !st.tracking);
+  tb.classList.toggle('text-black', !st.tracking);
   tb.disabled = st.loading;
   $('#bAlign').disabled = !st.stream;
   document.body.classList.toggle('mirror', !!st.mirror);
@@ -425,8 +430,8 @@ const CX = {
   head: 'text-[11px] font-bold uppercase tracking-[0.13em] text-ink-dim',
   hint: 'text-[13px] text-ink-dim',
   btn: 'min-h-[48px] px-3 rounded-xl bg-surface-2 border border-line font-medium text-[14px] active:scale-[.98] transition-transform grid place-items-center text-center',
-  btnPrimary: 'min-h-[48px] px-3 rounded-xl bg-brand text-white font-semibold active:scale-[.98] transition-transform grid place-items-center',
-  btnOn: 'min-h-[48px] px-3 rounded-xl bg-brand text-white font-semibold grid place-items-center',
+  btnPrimary: 'min-h-[48px] px-3 rounded-xl bg-accent text-black font-semibold active:scale-[.98] transition-transform grid place-items-center',
+  btnOn: 'min-h-[48px] px-3 rounded-xl bg-accent text-black font-semibold grid place-items-center',
   ctlRow: 'grid grid-cols-[64px_1fr_46px] items-center gap-3',
   ctlLabel: 'text-[12.5px] text-ink-dim truncate',
   ctlVal: 'text-right text-[12px] text-ink-dim tabular-nums',
@@ -439,7 +444,7 @@ function setView(v) {
   document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
   for (const b of document.querySelectorAll('#viewSeg button')) {
     const on = b.dataset.view === v;
-    b.classList.toggle('text-brand', on);
+    b.classList.toggle('text-white', on);
     b.classList.toggle('bg-surface-2', on);
     b.classList.toggle('text-ink-faint', !on);
   }
@@ -488,8 +493,8 @@ function sec(headText, kids) {
 }
 function setActive(btn, on) {
   if (!btn) return;
-  btn.classList.toggle('bg-brand', on); btn.classList.toggle('border-transparent', on); btn.classList.toggle('text-white', on);
-  btn.classList.toggle('bg-surface-2', !on); btn.classList.toggle('border-line', !on);
+  btn.classList.toggle('bg-accent', on); btn.classList.toggle('border-transparent', on); btn.classList.toggle('text-black', on);
+  btn.classList.toggle('bg-surface-2', !on); btn.classList.toggle('border-line', !on); btn.classList.toggle('text-ink', !on);
 }
 
 function slider(label, min, max, step, get, onInput) {
@@ -510,17 +515,18 @@ function slider(label, min, max, step, get, onInput) {
 function liveHero() {
   const img = h('img', { class: 'liveImg absolute inset-0 w-full h-full object-contain hidden', alt: '', decoding: 'async' });
   const noSig = h('div', { class: 'liveNo absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-dim text-[13px]' },
-    [h('div', { class: 'text-3xl text-brand/70', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
+    [h('div', { class: 'text-3xl text-white/70', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
   const title = h('div', { class: 'liveTitle absolute left-4 right-4 bottom-3 text-[16px] font-semibold truncate drop-shadow-[0_1px_6px_rgba(0,0,0,0.9)]' });
-  const play = h('button', { class: 'liveBtn flex-[1.6] min-h-[50px] rounded-xl bg-brand text-white text-xl grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'toggle' }) });
-  const mute = h('button', { class: 'liveBtn flex-1 min-h-[50px] rounded-xl bg-surface-2 border border-line grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck && st.deck.transport.muted) }) });
+  const play = h('button', { class: 'liveBtn flex-[1.6] min-h-[50px] rounded-xl bg-accent text-black text-xl grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'toggle' }) });
+  const mute = h('button', { class: 'liveBtn muteBtn flex-1 min-h-[50px] rounded-xl bg-surface-2 border border-line grid place-items-center active:scale-[.98] transition-transform', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck && st.deck.transport.muted) }) });
+  mute.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="mwave" d="M16.5 9.5a3.5 3.5 0 010 5M19 7a7 7 0 010 10"/><path class="mslash" d="M4 4l16 16"/></svg>';
   refs.title = title; refs.play = play; refs.mute = mute;
   const tbtn = (t, cmd) => h('button', { class: 'liveBtn flex-1 min-h-[50px] rounded-xl bg-surface-2 border border-line grid place-items-center text-lg active:scale-[.98] transition-transform', text: t, onclick: () => ctl('transport', { cmd }) });
   return h('div', { class: 'livecard rounded-2xl overflow-hidden bg-black border border-line' + (st.hasFrame ? ' live' : '') }, [
     h('div', { class: 'relative aspect-video bg-black cursor-zoom-in', onclick: () => toggleLiveFull() }, [
       img, noSig,
       h('span', { class: 'liveBadge absolute top-3 left-3 hidden items-center gap-1.5 text-[10px] font-bold tracking-wider text-white bg-black/50 px-2.5 py-1 rounded-full' },
-        [h('i', { class: 'w-1.5 h-1.5 rounded-full bg-bad' }), 'LIVE']),
+        [h('i', { class: 'w-1.5 h-1.5 rounded-full bg-white' }), 'LIVE']),
       h('div', { class: 'absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/75 to-transparent pointer-events-none' }),
       title,
     ]),
@@ -562,7 +568,7 @@ function buildDeck(root) {
   wrap.append(sec(null, [
     h('div', { class: 'flex gap-2.5' }, [
       refs.fxOn,
-      h('button', { class: BTN + ' flex-1 !bg-brand/15 !border-brand/40 !text-brand', text: '✳ Trigger', onclick: () => ctl('triggerAll') }),
+      h('button', { class: BTN + ' flex-1 !bg-white/[0.08] !border-white/25 !text-white', text: '✳ Trigger', onclick: () => ctl('triggerAll') }),
       refs.black,
     ]),
   ]));
@@ -583,7 +589,7 @@ function buildDeck(root) {
   // --- scenes
   wrap.append(sec('Scenes', [
     h('div', { class: 'flex gap-2.5 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1' }, st.catalog.scenes.map((name) =>
-      h('button', { class: 'shrink-0 min-h-[42px] px-4 rounded-xl bg-surface-2 border border-line text-[13.5px] font-medium active:bg-brand active:text-white active:border-transparent transition-colors', text: name, onclick: () => ctl('scene', { name }) }))),
+      h('button', { class: 'shrink-0 min-h-[42px] px-4 rounded-xl bg-surface-2 border border-line text-[13.5px] font-medium active:bg-accent active:text-black active:border-transparent transition-colors', text: name, onclick: () => ctl('scene', { name }) }))),
   ]));
 
   // --- layers
@@ -598,9 +604,9 @@ function buildDeck(root) {
     const op = slider('', 0, 1, 0.01, () => layerById(L.id).opacity,
       (v) => { ctl('layerOpacity', { id: L.id, value: v }); return Math.round(v * 100) + '%'; });
     const trig = L.actions.length
-      ? h('button', { class: 'w-11 h-10 rounded-lg bg-brand/15 border border-brand/40 text-brand grid place-items-center shrink-0', text: '⚡', title: L.actions[0].label, onclick: () => ctl('triggerLayer', { id: L.id }) })
+      ? h('button', { class: 'w-11 h-10 rounded-lg bg-white/[0.08] border border-white/25 text-white grid place-items-center shrink-0', text: '⚡', title: L.actions[0].label, onclick: () => ctl('triggerLayer', { id: L.id }) })
       : null;
-    const del = h('button', { class: 'w-10 h-10 rounded-lg border border-bad/30 text-bad grid place-items-center shrink-0', text: '✕', onclick: () => ctl('removeLayer', { id: L.id }) });
+    const del = h('button', { class: 'w-10 h-10 rounded-lg border border-white/18 text-ink-dim grid place-items-center shrink-0', text: '✕', onclick: () => ctl('removeLayer', { id: L.id }) });
     const row = h('div', { class: 'rounded-xl bg-surface-2/60 border border-line p-2.5 flex flex-col gap-2' }, [
       h('div', { class: 'flex items-center gap-2.5' }, [on, h('span', { class: 'flex-1 text-[14.5px] font-medium truncate', text: L.name }), trig, del]),
       op.row,
@@ -618,7 +624,7 @@ function buildDeck(root) {
   const sel = h('select', { class: SEL + ' flex-1' }, [h('option', { value: '', text: 'Add an effect…' }),
     ...st.catalog.effects.map((e) => h('option', { value: e.type, text: e.label }))]);
   sel.addEventListener('change', () => { if (sel.value) { ctl('addLayer', { type: sel.value }); sel.value = ''; } });
-  wrap.append(sec(null, [h('div', { class: 'flex gap-2.5 items-center' }, [sel, h('button', { class: BTN + ' shrink-0 !text-bad', text: 'Clear', onclick: () => ctl('clearLayers') })])]));
+  wrap.append(sec(null, [h('div', { class: 'flex gap-2.5 items-center' }, [sel, h('button', { class: BTN + ' shrink-0 !text-ink-dim', text: 'Clear', onclick: () => ctl('clearLayers') })])]));
 
   // --- world + quality
   const grav = slider('Gravity', -2, 4, 0.05, () => st.deck.fx.gravity, (v) => { ctl('world', { key: 'gravity', value: v }); return v.toFixed(2); });
@@ -643,13 +649,13 @@ function updateDeck() {
   const t = d.transport;
   if (refs.title) refs.title.textContent = t.title || (t.has ? '' : 'Nothing loaded');
   if (refs.play) refs.play.textContent = t.playing ? '⏸' : '▶';
-  if (refs.mute) refs.mute.textContent = t.muted ? '🔇' : '🔊';
+  if (refs.mute) refs.mute.classList.toggle('muted', !!t.muted);
   setActive(refs.fxOn, !!d.fx.enabled);
   setActive(refs.black, !!d.blackout);
   for (const L of d.fx.layers || []) {
     const r = refs.layers[L.id]; if (!r) continue;
     r.on.textContent = L.on ? '●' : '○';
-    r.on.classList.toggle('text-brand', L.on); r.on.classList.toggle('text-ink-faint', !L.on);
+    r.on.classList.toggle('text-white', L.on); r.on.classList.toggle('text-ink-faint', !L.on);
     if (r.op !== active) { r.op.value = L.opacity; r.op._val.textContent = Math.round(L.opacity * 100) + '%'; fillRange(r.op); }
   }
   const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); fillRange(inp); } };
@@ -699,7 +705,7 @@ function renderQueue() {
   wrap.append(sec('Add from YouTube', [
     urlInp,
     h('div', { class: 'flex gap-2.5' }, [
-      h('button', { class: BTN + ' flex-1 !bg-brand !border-transparent !text-white', text: 'Queue', onclick: () => addUrl(false) }),
+      h('button', { class: BTN + ' flex-1 !bg-accent !border-transparent !text-black', text: 'Queue', onclick: () => addUrl(false) }),
       h('button', { class: BTN + ' flex-1', text: 'Save to library', onclick: () => addUrl(true) }),
     ]),
   ]));
@@ -712,7 +718,7 @@ function renderQueue() {
     qbtn('▶', 'brand', () => ctl('playIndex', { index: it.i })),
     qbtn('✕', 'bad', () => ctl('removeIndex', { index: it.i })),
   ]));
-  const disc = h('button', { class: 'shrink-0 min-h-[34px] px-3 rounded-lg border text-[12.5px] font-semibold ' + (q.autoDiscover ? 'bg-brand border-transparent text-white' : 'bg-surface-2 border-line text-ink'), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) });
+  const disc = h('button', { class: 'shrink-0 min-h-[34px] px-3 rounded-lg border text-[12.5px] font-semibold ' + (q.autoDiscover ? 'bg-accent border-transparent text-white' : 'bg-surface-2 border-line text-ink'), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) });
   wrap.append(h('div', { class: 'rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3' }, [
     h('div', { class: 'flex items-center gap-2' }, [h('div', { class: CX.head + ' flex-1', text: 'Up next · ' + upNext.length }), disc]),
     nextBox,
@@ -727,8 +733,8 @@ function renderQueue() {
 }
 
 function qbtn(glyph, tone, onclick) {
-  const t = tone === 'brand' ? 'bg-brand/15 border-brand/40 text-brand'
-    : tone === 'good' ? 'bg-good/15 border-good/40 text-good' : 'bg-transparent border-bad/30 text-bad';
+  const t = tone === 'brand' ? 'bg-white/[0.08] border-white/25 text-white'
+    : tone === 'good' ? 'bg-white/[0.08] border-white/25 text-white' : 'bg-transparent border-white/18 text-ink-dim';
   return h('button', { class: 'w-11 h-11 shrink-0 rounded-xl border grid place-items-center ' + t, text: glyph, onclick });
 }
 function qrow(title, badge, buttons) {

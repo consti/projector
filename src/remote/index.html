@@ -30,7 +30,7 @@
   <main id="queue" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
 
   <div id="msg" class="fixed inset-0 z-[15] flex flex-col items-center justify-center gap-3 px-10 text-center">
-    <div class="w-16 h-16 rounded-2xl bg-brand/15 border border-brand/30 flex items-center justify-center text-brand text-3xl">▶</div>
+    <div class="w-16 h-16 rounded-2xl bg-white/[0.06] border border-white/20 flex items-center justify-center text-white text-3xl">▶</div>
     <div id="msgText" class="text-xl font-semibold">Tap to start the camera</div>
     <div id="msgSub" class="text-sm text-ink-dim max-w-[32ch]"></div>
   </div>
@@ -40,7 +40,7 @@
     <div class="flex gap-2">
       <button id="bAuto" class="flex-1 h-12 rounded-xl bg-surface-2 border border-line font-medium">Find markers</button>
       <button id="bAlignCancel" class="flex-1 h-12 rounded-xl bg-surface-2 border border-line font-medium">Cancel</button>
-      <button id="bAlignDone" class="flex-1 h-12 rounded-xl bg-brand text-white font-semibold">Done</button>
+      <button id="bAlignDone" class="flex-1 h-12 rounded-xl bg-accent text-black font-semibold">Done</button>
     </div>
   </div>
 
@@ -49,7 +49,7 @@
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12.5" r="3.2"/><path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/></svg>
     </button>
     <button id="bAlign" class="px-5 h-[52px] shrink-0 rounded-xl bg-surface-1 border border-line font-medium">Align</button>
-    <button id="bTrack" class="flex-1 h-[52px] rounded-xl bg-brand text-white font-semibold text-[15px]">Track</button>
+    <button id="bTrack" class="flex-1 h-[52px] rounded-xl bg-accent text-black font-semibold text-[15px]">Track</button>
     <button id="bMore" aria-label="Settings" class="w-[52px] h-[52px] shrink-0 rounded-xl bg-surface-1 border border-line grid place-items-center">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2L16 2H8l-.5 2.4a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 003 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2L8 22h8l.5-2.4a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg>
     </button>

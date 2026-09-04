@@ -8,10 +8,10 @@
   button { -webkit-tap-highlight-color: transparent; }
   select, input, textarea { font: inherit; color: inherit; }
   input[type=range]{ -webkit-appearance:none; height:32px; background:transparent; width:100%; }
-  input[type=range]::-webkit-slider-runnable-track{ height:6px; border-radius:9999px;
-    background:linear-gradient(#4f8cff,#4f8cff) no-repeat, #2a2d34; background-size: var(--fill,50%) 100%, 100% 100%; }
-  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:22px; height:22px; margin-top:-8px;
-    border-radius:50%; background:#fff; border:0; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+  input[type=range]::-webkit-slider-runnable-track{ height:2px; border-radius:9999px;
+    background:linear-gradient(#fff,#fff) no-repeat, #333; background-size: var(--fill,50%) 100%, 100% 100%; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; margin-top:-7px;
+    border-radius:50%; background:#fff; border:0; box-shadow:0 0 0 1px #000; }
 }
 
 @layer utilities {
@@ -44,8 +44,14 @@ body.aligning #viewSeg { opacity: 0; pointer-events: none; }
 .panel-enter { animation: panelIn .3s cubic-bezier(.2,.9,.25,1); }
 @keyframes panelIn { from { opacity: 0; transform: translateY(10px); } }
 
-/* iOS toggle in settings */
-.tgl { position: relative; width: 44px; height: 27px; border-radius: 9999px; background: #33363d; transition: background .2s; flex: none; }
-.tgl::after { content:''; position:absolute; top:3px; left:3px; width:21px; height:21px; border-radius:50%; background:#fff; transition: transform .2s cubic-bezier(.2,.9,.2,1); }
-input:checked + .tgl { background: #4f8cff; }
-input:checked + .tgl::after { transform: translateX(17px); }
+/* toggle in settings — greyscale */
+.tgl { position: relative; width: 44px; height: 26px; border-radius: 9999px; background: #26262a; border: 1px solid #38383d; transition: background .2s; flex: none; }
+.tgl::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#9a9a9a; transition: transform .2s cubic-bezier(.2,.9,.2,1), background .2s; }
+input:checked + .tgl { background: #ededed; border-color:#ededed; }
+input:checked + .tgl::after { transform: translateX(18px); background:#0a0a0b; }
+
+/* mute button: monochrome speaker, slash when muted */
+.muteBtn .mslash { display: none; }
+.muteBtn.muted .mwave { display: none; }
+.muteBtn.muted .mslash { display: inline; }
+.muteBtn.muted { color: #8c8c8c; }

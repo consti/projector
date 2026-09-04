@@ -5,13 +5,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        ink: { DEFAULT: '#e8eaed', dim: '#9aa1ac', faint: '#6b727e' },
-        surface: { 0: '#0c0d10', 1: '#151619', 2: '#1c1e23', 3: '#26282e' },
-        line: '#2a2d34',
-        brand: { DEFAULT: '#4f8cff', 600: '#3b78f0', 700: '#2f66d6' },
-        good: '#31c48d', bad: '#f45b6c', warn: '#f6c445',
+        // greyscale only — the one bright is white, used for the active state
+        ink: { DEFAULT: '#ededed', dim: '#8c8c8c', faint: '#565658' },
+        surface: { 0: '#0a0a0b', 1: '#101012', 2: '#17171a', 3: '#202024' },
+        line: '#2a2a2e',
+        accent: '#ffffff',
       },
-      borderRadius: { xl2: '1.1rem' },
       fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Text', 'system-ui', 'sans-serif'] },
     },
   },
