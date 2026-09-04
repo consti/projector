@@ -42,10 +42,11 @@ function connect() {
   ws.onopen = () => {
     st.connected = true; st.retry = 0;
     send({ t: 'hello', name: st.name || deviceName(), ua: navigator.userAgent, w: video.videoWidth || 0, h: video.videoHeight || 0 });
+    st._liveOn = false; syncLiveSub();      // (re)subscribe to the live preview if on a panel
     ui();
   };
   ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage(m); };
-  ws.onclose = () => { st.connected = false; st.ws = null; ui(); scheduleReconnect(); };
+  ws.onclose = () => { st.connected = false; st.ws = null; st._liveOn = false; ui(); scheduleReconnect(); };
   ws.onerror = () => { try { ws.close(); } catch {} };
 }
 function scheduleReconnect() {
@@ -58,7 +59,8 @@ function onMessage(m) {
   switch (m.t) {
     case 'config': Object.assign(st.cfg, m); ui(); break;
     case 'catalog': st.catalog = m; renderDeck(); break;
-    case 'deck': st.deck = m; renderDeck(); renderQueue(); break;
+    case 'deck': st.deck = m; renderDeck(); renderQueue(); if (st.view === 'queue' && st.deck) updateDeck(); break;
+    case 'frame': onLiveFrame(m); break;
     case 'library': st.library = m.items || []; renderQueue(); break;
     case 'calibOk': leaveAlign(false); toast('Aligned. Now press Track.'); break;
     case 'toast': toast(m.text); break;
@@ -425,8 +427,18 @@ function setView(v) {
   showP('#queue', v === 'queue');
   if (v === 'control') { send({ t: 'deckSub' }); renderDeck(); }
   if (v === 'queue') { send({ t: 'deckSub' }); send({ t: 'ctl', op: 'libSub' }); renderQueue(); }
+  syncLiveSub();
   haptic(10);
   ui();
+}
+
+// Ask the Mac to stream the projection preview only while a panel is showing it.
+function syncLiveSub() {
+  const want = st.connected && (st.view === 'control' || st.view === 'queue');
+  if (want === st._liveOn) return;
+  st._liveOn = want;
+  send({ t: 'ctl', op: 'liveSub', on: want });
+  if (!want) { st.hasFrame = false; document.querySelectorAll('.livecard').forEach((c) => c.classList.remove('live')); }
 }
 
 function positionNavGlow() {
@@ -466,22 +478,53 @@ function slider(label, min, max, step, get, onInput) {
   return { row, inp };
 }
 
+// A live preview of the projection (streamed from the Mac) with the title and
+// transport. Shared by the Mixer and Queue tabs.
+function liveHero() {
+  const img = h('img', { class: 'liveImg', alt: '', decoding: 'async' });
+  const noSig = h('div', { class: 'liveNo' }, [h('div', { class: 'liveNoIcon', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
+  const title = h('div', { class: 'liveTitle' });
+  const play = h('button', { class: 'liveBtn big', onclick: () => ctl('transport', { cmd: 'toggle' }) });
+  const mute = h('button', { class: 'liveBtn', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck && st.deck.transport.muted) }) });
+  refs.title = title; refs.play = play; refs.mute = mute;
+  const card = h('div', { class: 'dsec livecard' + (st.hasFrame ? ' live' : '') }, [
+    h('div', { class: 'liveStage', onclick: () => toggleLiveFull() }, [
+      img, noSig,
+      h('span', { class: 'liveBadge' }, [h('i'), 'LIVE']),
+      h('div', { class: 'liveGrad' }), title,
+    ]),
+    h('div', { class: 'liveCtl' }, [
+      h('button', { class: 'liveBtn', text: '⏮', onclick: () => ctl('transport', { cmd: 'prev' }) }),
+      play,
+      h('button', { class: 'liveBtn', text: '⏭', onclick: () => ctl('transport', { cmd: 'next' }) }),
+      mute,
+    ]),
+  ]);
+  return card;
+}
+function onLiveFrame(m) {
+  if (!m.data) return;
+  st.hasFrame = true;
+  st.lastFrame = performance.now();
+  const url = 'data:image/jpeg;base64,' + m.data;
+  st.lastFrameUrl = url;
+  document.querySelectorAll('.liveImg').forEach((im) => { im.src = url; });
+  document.querySelectorAll('.livecard').forEach((c) => c.classList.add('live'));
+  const full = $('#liveFull img'); if (full) full.src = url;
+}
+function toggleLiveFull() {
+  let f = $('#liveFull');
+  if (f) { f.remove(); return; }
+  f = h('div', { id: 'liveFull', onclick: () => f.remove() }, [h('img', { alt: '' }), h('div', { class: 'liveFullHint', text: 'Tap to close' })]);
+  if (st.lastFrameUrl) f.querySelector('img').src = st.lastFrameUrl;
+  document.body.append(f);
+}
+
 function buildDeck(root) {
   root.textContent = '';
   refs.layers = {};
 
-  // --- transport
-  refs.title = h('div', { class: 'dtitle' });
-  refs.play = h('button', { class: 'big', onclick: () => ctl('transport', { cmd: 'toggle' }) });
-  root.append(h('div', { class: 'dsec' }, [
-    refs.title,
-    h('div', { class: 'drow' }, [
-      h('button', { text: '⏮', onclick: () => ctl('transport', { cmd: 'prev' }) }),
-      refs.play,
-      h('button', { text: '⏭', onclick: () => ctl('transport', { cmd: 'next' }) }),
-      (refs.mute = h('button', { text: '🔊', onclick: () => ctl('transport', { cmd: 'muted', arg: !(st.deck.transport.muted) }) })),
-    ]),
-  ]));
+  root.append(liveHero());
 
   // --- effects master
   refs.fxOn = h('button', { class: 'grow', text: 'Effects', onclick: () => ctl('fxEnabled', { on: !st.deck.fx.enabled }) });
@@ -618,17 +661,9 @@ function renderQueue() {
   queueShape = shape;
   root.innerHTML = '';
 
-  // now playing
-  const np = q.items.find((i) => i.cur) || (d.transport.has ? { title: d.transport.title } : null);
-  root.append(h('div', { class: 'dsec' }, [
-    h('div', { class: 'dhead', text: 'Now playing' }),
-    h('div', { class: 'dtitle', text: np ? np.title : 'Nothing playing' }),
-    h('div', { class: 'drow' }, [
-      h('button', { text: '⏮', onclick: () => ctl('transport', { cmd: 'prev' }) }),
-      h('button', { class: 'big', text: d.transport.playing ? '⏸' : '▶', onclick: () => ctl('transport', { cmd: 'toggle' }) }),
-      h('button', { text: '⏭', onclick: () => ctl('transport', { cmd: 'next' }) }),
-    ]),
-  ]));
+  // now playing — the live projection preview + transport
+  root.append(liveHero());
+  updateDeck();
 
   // add from YouTube
   const urlInp = h('input', { type: 'text', placeholder: 'Paste a YouTube link', inputmode: 'url' });

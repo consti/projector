@@ -952,17 +952,67 @@ function setupRemote() {
   });
   remote.on('change', () => { state.remote = remote.info(); pushState(); });
   remote.on('message', (id, msg) => {
+    // a phone asking for the live projection preview is handled here in main
+    // (only main can capture a window); everything else goes to the control UI
+    if (msg && msg.t === 'ctl' && msg.op === 'liveSub') { markLiveSub(id, msg.on); return; }
     if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg });
   });
   remote.on('open', (id, who) => {
     if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg: { t: 'open', ...who } });
   });
   remote.on('close', (id) => {
+    markLiveSub(id, false);
     if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg: { t: 'close' } });
   });
   state.remote = remote.info();
   setInterval(() => remote.sweep(), 1000);
   if (state.settings.remoteEnabled) remote.start();
+}
+
+// -------------------------------------------------- live projection preview --
+// Phones that open the Mixer/Queue tabs get a low-rate JPEG of what is actually
+// on the wall — captured from the projector output window when one is open, and
+// otherwise from the control window's stage. Only runs while a phone is watching.
+const liveClients = new Set();
+let liveTimer = null;
+let liveStageRect = null;      // {x,y,w,h} of #frame in the control window (CSS px)
+let liveBusy = false;
+
+function markLiveSub(id, on) {
+  if (on) liveClients.add(id); else liveClients.delete(id);
+  updateLiveLoop();
+}
+function updateLiveLoop() {
+  const want = liveClients.size > 0 && remote && remote.running;
+  if (want && !liveTimer) liveTimer = setInterval(captureLive, 110);   // ~9 fps
+  else if (!want && liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+}
+function liveCaptureTarget() {
+  for (const role of ['projector', 'tv']) {
+    const w = outputs.get(role);
+    if (w && !w.isDestroyed() && state.outputs[role] && state.outputs[role].enabled) return { win: w, rect: null };
+  }
+  if (control && !control.isDestroyed()) return { win: control, rect: liveStageRect };
+  return null;
+}
+async function captureLive() {
+  if (liveBusy || !liveClients.size) return;
+  const t = liveCaptureTarget();
+  if (!t) return;
+  liveBusy = true;
+  try {
+    const opts = t.rect && t.rect.w > 10 && t.rect.h > 10
+      ? { rect: { x: Math.round(t.rect.x), y: Math.round(t.rect.y), width: Math.round(t.rect.w), height: Math.round(t.rect.h) } }
+      : undefined;
+    let img = await t.win.webContents.capturePage(opts && opts.rect);
+    const size = img.getSize();
+    if (!size.width) { liveBusy = false; return; }
+    const w = 480, h = Math.max(1, Math.round((size.height / size.width) * w));
+    img = img.resize({ width: w, height: h, quality: 'good' });
+    const jpeg = img.toJPEG(58);
+    remote.send(null, { t: 'frame', w, h, data: jpeg.toString('base64') });
+  } catch {}
+  liveBusy = false;
 }
 
 // --------------------------------------------------------------- library ----
@@ -1062,6 +1112,7 @@ function ipc() {
   });
   ipcMain.handle('remote:send', (e, id, msg) => remote.send(id, msg));
   ipcMain.handle('remote:info', () => remote.info());
+  ipcMain.handle('remote:stageRect', (e, rect) => { liveStageRect = rect; return true; });
 
   ipcMain.handle('displays:get', () => serializeDisplays());
   ipcMain.handle('outputs:sync', () => { syncOutputs(); return true; });

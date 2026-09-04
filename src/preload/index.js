@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   remoteStop: () => ipcRenderer.invoke('remote:stop'),
   remoteSend: (id, msg) => ipcRenderer.invoke('remote:send', id, msg),
   remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  reportStageRect: (rect) => ipcRenderer.invoke('remote:stageRect', rect),
   onRemoteMsg: on('remote:msg'),
 
   displays: () => ipcRenderer.invoke('displays:get'),

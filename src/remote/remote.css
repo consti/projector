@@ -171,7 +171,7 @@ body.aligning #viewSeg{opacity:0;pointer-events:none}
 .panel.enter{animation:panelIn .42s cubic-bezier(.2,.9,.25,1)}
 @keyframes panelIn{from{opacity:0;transform:translateY(14px) scale(.99)}}
 
-.dsec{position:relative;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:14px;
+.dsec{position:relative;flex:none;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:14px;
   display:flex;flex-direction:column;gap:11px;
   backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);
   box-shadow:0 10px 30px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05)}
@@ -183,8 +183,34 @@ body.aligning #viewSeg{opacity:0;pointer-events:none}
 .drow>button{flex:1}
 .drow>button.big{flex:1.5;font-size:22px;min-height:56px;border-radius:18px}
 
-/* now-playing hero */
-.nowHero{background:linear-gradient(160deg,rgba(79,124,255,.16),rgba(177,84,255,.08));border:1px solid rgba(120,150,255,.18)}
+/* --------------------------------------------------- live projection hero */
+.livecard{display:block;padding:0;overflow:hidden;background:rgba(0,0,0,.35)}
+.liveStage{position:relative;width:100%;height:0;padding-bottom:56.25%;flex:none;background:#000;overflow:hidden;cursor:zoom-in}
+.liveImg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:none;background:#000}
+.livecard.live .liveImg{display:block}
+.liveNo{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  color:var(--dim);font-size:13px;text-align:center;padding:20px;
+  background:radial-gradient(120% 90% at 50% 40%,rgba(79,124,255,.14),transparent 70%)}
+.livecard.live .liveNo{display:none}
+.liveNoIcon{font-size:34px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 12px rgba(79,124,255,.5));animation:breathe 3s ease-in-out infinite}
+.liveBadge{position:absolute;top:11px;left:11px;display:none;align-items:center;gap:6px;font-size:10px;font-weight:700;
+  letter-spacing:.09em;color:#fff;background:rgba(0,0,0,.45);padding:5px 10px;border-radius:999px;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.livecard.live .liveBadge{display:flex}
+.liveBadge i{width:7px;height:7px;border-radius:50%;background:var(--bad);box-shadow:0 0 8px var(--bad);animation:pulse 1.6s infinite}
+.liveGrad{position:absolute;left:0;right:0;bottom:0;height:55%;pointer-events:none;
+  background:linear-gradient(transparent,rgba(0,0,0,.72))}
+.liveTitle{position:absolute;left:15px;right:15px;bottom:13px;font-size:16.5px;font-weight:640;color:#fff;
+  text-shadow:0 1px 10px rgba(0,0,0,.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.liveCtl{display:flex;gap:9px;padding:11px}
+.liveBtn{flex:1;background:var(--card);border:1px solid var(--line);min-height:50px;font-size:16px}
+.liveBtn.big{flex:1.5;font-size:22px;background:var(--grad);border:0;color:#08111f;
+  box-shadow:0 4px 16px rgba(79,124,255,.35)}
+#liveFull{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center;
+  animation:appIn .25s ease;cursor:zoom-out}
+#liveFull img{max-width:100%;max-height:100%;object-fit:contain}
+.liveFullHint{position:absolute;bottom:calc(var(--sab) + 22px);left:0;right:0;text-align:center;color:var(--dim);font-size:13px}
 
 /* scenes */
 .chips{display:flex;gap:9px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -217,7 +243,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   background:#fff;border:0;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 4px rgba(91,157,255,.2),0 0 14px rgba(91,157,255,.5)}
 
 /* ------------------------------------------------------------------- queue */
-.qlist{display:flex;flex-direction:column;gap:7px;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* one scroll surface per panel — no nested scroll containers (they trap touch) */
+.qlist{display:flex;flex-direction:column;gap:7px}
 .qrow{display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:14px;padding:9px 10px}
 .qinfo{flex:1;min-width:0}
 .qtitle{font-size:14.5px;font-weight:540;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

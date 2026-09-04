@@ -1374,3 +1374,16 @@ function frame() {
 }
 requestAnimationFrame(frame);
 stage.layout();
+// Report the stage (#frame) rect so the app can send phones a cropped live
+// preview of the projection when no output window is open.
+let _lastRectKey = '';
+setInterval(() => {
+  const f = $('#frame'); if (!f) return;
+  const r = f.getBoundingClientRect();
+  if (r.width < 8 || r.height < 8) return;
+  const key = [r.left, r.top, r.width, r.height].map(Math.round).join(',');
+  if (key === _lastRectKey) return;
+  _lastRectKey = key;
+  api.reportStageRect({ x: r.left, y: r.top, w: r.width, h: r.height });
+}, 500);
+
