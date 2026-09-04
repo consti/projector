@@ -973,7 +973,7 @@ function setupLibrary() {
   library = new Library(app.getPath('userData'));
   library.setMaxHeight(state.settings.maxHeight || 1080);
   let t = null;
-  const push = () => { clearTimeout(t); t = setTimeout(pushLibrary, 120); };
+  const push = () => { clearTimeout(t); t = setTimeout(pushLibrary, 300); };
   library.on('change', push);
   library.on('progress', (id, pct) => {
     // progress alone need not rebuild the whole list; send a light update

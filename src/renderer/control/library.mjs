@@ -43,8 +43,15 @@ export class LibraryView {
     r.innerHTML = '';
     this.addInput = el('input', { type: 'text', id: 'libAdd', placeholder: 'Paste YouTube video / playlist / channel URLs (one per line)…' });
     this.addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this._add(); });
-    this.search = el('input', { type: 'search', class: 'libSearch', placeholder: 'Search' });
+    this.search = el('input', { type: 'search', class: 'libSearch', placeholder: 'Search artist, song, tag' });
     this.search.addEventListener('input', () => { this.filter = this.search.value.toLowerCase(); this._renderGrid(); });
+
+    this.artistSel = el('select', { class: 'libFilterSel', title: 'Filter by artist' });
+    this.artistSel.addEventListener('change', () => { this.artistFilter = this.artistSel.value || null; this._renderGrid(); });
+    this.sortSel = el('select', { class: 'libFilterSel', title: 'Sort' }, [
+      ['added', 'Recently added'], ['artist', 'Artist A–Z'], ['title', 'Song A–Z'], ['longest', 'Longest'], ['shortest', 'Shortest'],
+    ].map(([v, t]) => el('option', { value: v, text: t })));
+    this.sortSel.addEventListener('change', () => { this.sortBy = this.sortSel.value; this._renderGrid(); });
 
     this.countEl = el('span', { class: 'libCount hint' });
     this.discoverBtn = el('button', { class: 'btn', text: 'Auto-discover: off', onclick: () => this.hooks.toggleDiscover() });
@@ -63,11 +70,16 @@ export class LibraryView {
       el('button', { class: 'btn on', text: 'Add', onclick: () => this._add() }),
     ]);
 
+    this.filterRow = el('div', { class: 'libFilterRow' }, [
+      el('span', { class: 'hint', text: 'Artist' }), this.artistSel,
+      el('span', { class: 'hint', text: 'Sort' }), this.sortSel,
+    ]);
+    this.statusRow = el('div', { class: 'libStatusRow' });
     this.tagsRow = el('div', { class: 'libTags' });
     this.batchBar = el('div', { class: 'libBatch', hidden: true });
     this.grid = el('div', { class: 'libGrid' });
 
-    r.append(bar, addRow, this.tagsRow, this.batchBar, this.grid);
+    r.append(bar, addRow, this.filterRow, this.statusRow, this.tagsRow, this.batchBar, this.grid);
     this.editorRoot = el('div', { class: 'libEditor', hidden: true });
     r.append(this.editorRoot);
   }
@@ -89,10 +101,20 @@ export class LibraryView {
     }
   }
   setProgress(id, pct) {
-    const card = this.grid.querySelector(`[data-id="${cssEsc(id)}"] .libProg span`);
-    if (card) card.style.width = Math.round(pct * 100) + '%';
     const it = this.items.find((i) => i.id === id);
     if (it) it.progress = pct;
+    if (!this.open) return;
+    const card = this.grid.querySelector(`[data-id="${cssEsc(id)}"] .libProg span`);
+    if (card) card.style.width = Math.round(pct * 100) + '%';
+    const label = this.grid.querySelector(`[data-id="${cssEsc(id)}"] .libStatusT`);
+    if (label && it && it.status === 'downloading') label.textContent = 'Downloading ' + Math.round(pct * 100) + '%';
+    // keep the header's aggregate bar live too
+    const bar = this.statusRow.querySelector('.libDlBar span');
+    if (bar) {
+      const active = this.items.filter((i) => i.status === 'downloading');
+      const avg = active.length ? active.reduce((s, i) => s + (i.progress || 0), 0) / active.length : 0;
+      bar.style.width = Math.round(avg * 100) + '%';
+    }
   }
   setDiscover(on) { this.discoverBtn.textContent = 'Auto-discover: ' + (on ? 'on' : 'off'); this.discoverBtn.classList.toggle('on', !!on); }
 
@@ -112,17 +134,91 @@ export class LibraryView {
 
   _filtered() {
     let list = this.items;
+    if (this.statusFilter) {
+      list = this.statusFilter === 'pending'
+        ? list.filter((i) => i.status === 'queued' || i.status === 'downloading' || i.status === 'processing')
+        : list.filter((i) => i.status === this.statusFilter);
+    }
+    if (this.artistFilter) list = list.filter((i) => (i.artist || '') === this.artistFilter);
     if (this.tagFilter) list = list.filter((i) => (i.tags || []).includes(this.tagFilter));
     if (this.filter) {
       const q = this.filter;
       list = list.filter((i) => (i.artist + ' ' + i.title + ' ' + (i.tags || []).join(' ') + ' ' + i.rawTitle).toLowerCase().includes(q));
     }
-    return list;
+    const by = this.sortBy || 'added';
+    const cmp = {
+      added: (a, b) => (b.addedAt || 0) - (a.addedAt || 0),
+      artist: (a, b) => (a.artist || '~').localeCompare(b.artist || '~') || (a.title || '').localeCompare(b.title || ''),
+      title: (a, b) => (a.title || '').localeCompare(b.title || ''),
+      longest: (a, b) => (b.duration || 0) - (a.duration || 0),
+      shortest: (a, b) => (a.duration || 0) - (b.duration || 0),
+    }[by];
+    return cmp ? list.slice().sort(cmp) : list;
+  }
+
+  _syncArtists() {
+    const artists = [...new Set(this.items.map((i) => i.artist).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const key = artists.join('|');
+    if (this._artistKey !== key) {
+      this._artistKey = key;
+      const cur = this.artistFilter || '';
+      this.artistSel.innerHTML = '';
+      this.artistSel.append(el('option', { value: '', text: 'All artists (' + artists.length + ')' }));
+      for (const a of artists) this.artistSel.append(el('option', { value: a, text: a }));
+      this.artistSel.value = artists.includes(cur) ? cur : '';
+      if (!artists.includes(cur)) this.artistFilter = null;
+    } else {
+      this.artistSel.value = this.artistFilter || '';
+    }
+  }
+
+  _counts() {
+    const c = { total: this.items.length, ready: 0, downloading: 0, processing: 0, queued: 0, error: 0 };
+    for (const i of this.items) c[i.status] = (c[i.status] || 0) + 1;
+    c.pending = c.queued + c.downloading + c.processing;
+    return c;
+  }
+
+  _renderStatusRow() {
+    const c = this._counts();
+    this.statusRow.innerHTML = '';
+    if (!c.total) return;
+    const chip = (key, label, n, cls) => el('button', {
+      class: 'statChip' + (cls ? ' ' + cls : '') + (this.statusFilter === key ? ' on' : ''),
+      onclick: () => { this.statusFilter = this.statusFilter === key ? null : key; this._renderGrid(); },
+    }, [label + ' ', el('b', { text: String(n) })]);
+    this.statusRow.append(chip(null, 'All', c.total, ''));
+    if (c.pending) this.statusRow.append(chip('pending', 'Pending', c.pending, 'busy'));
+    if (c.downloading + c.processing) {
+      // live aggregate progress across the active downloads
+      const active = this.items.filter((i) => i.status === 'downloading');
+      const avg = active.length ? active.reduce((s, i) => s + (i.progress || 0), 0) / active.length : (c.processing ? 1 : 0);
+      const bar = el('div', { class: 'libDlBar' }, [el('span', { style: `width:${Math.round(avg * 100)}%` })]);
+      this.statusRow.append(el('div', { class: 'libDlWrap' }, [
+        el('span', { class: 'hint', text: `Downloading ${c.downloading}${c.processing ? ' · processing ' + c.processing : ''}${c.queued ? ' · ' + c.queued + ' queued' : ''}` }),
+        bar,
+      ]));
+    }
+    if (c.ready) this.statusRow.append(chip('ready', 'Ready', c.ready, 'ok'));
+    if (c.error) {
+      this.statusRow.append(chip('error', 'Failed', c.error, 'bad'));
+      this.statusRow.append(el('button', { class: 'btn sm', text: 'Retry all failed',
+        onclick: () => { for (const i of this.items) if (i.status === 'error') api.libraryRetry(i.id); this.hooks.toast('Retrying ' + c.error); } }));
+    }
+    // let the operator act on a whole filtered set at once (e.g. cancel the queue)
+    const shown = this._filtered();
+    if (shown.length > 1) {
+      this.statusRow.append(el('span', { class: 'grow' }));
+      this.statusRow.append(el('button', { class: 'btn sm', text: 'Select all (' + shown.length + ')',
+        onclick: () => { for (const i of shown) this.sel.add(i.id); this._renderGrid(); } }));
+    }
   }
 
   _renderGrid() {
     if (!this.open) return;
+    this._syncArtists();
     const list = this._filtered();
+    this._renderStatusRow();
     this.countEl.textContent = this.items.length ? `${list.length}${list.length !== this.items.length ? ' / ' + this.items.length : ''}` : '';
     // tag chips
     const tags = [...new Set(this.items.flatMap((i) => i.tags || []))].sort();

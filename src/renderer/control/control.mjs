@@ -570,7 +570,7 @@ function deleteSelected() {
 const updaters = [];
 // things that need to move every frame rather than on commit (audio meters)
 const frameUpdaters = [];
-const openSections = new Set(['Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets']);
+const openSections = new Set(['Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets']);
 
 function section(title, kids) {
   const body = el('div', { class: 'body' }, kids);

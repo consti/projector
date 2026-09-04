@@ -194,8 +194,9 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .tagChip{background:#191c21;border:1px solid var(--line);border-radius:12px;padding:3px 10px;font-size:11.5px;cursor:pointer}
 .tagChip.on{background:var(--accent);border-color:var(--accent);color:#031425;font-weight:600}
 .libBatch{display:flex;gap:6px;align-items:center;padding:8px 16px;background:#14171c;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.libGrid{flex:1;overflow-y:auto;padding:16px;display:grid;gap:14px;
-  grid-template-columns:repeat(auto-fill,minmax(230px,1fr));align-content:start}
+.libGrid{flex:1;overflow-y:auto;padding:16px;display:grid;gap:16px;
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  grid-auto-rows:max-content;align-content:start}
 .libEmpty{grid-column:1/-1;text-align:center;padding:60px 20px;font-size:13px}
 
 .libCard{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;
@@ -205,8 +206,10 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .libCheck{position:absolute;top:8px;left:8px;z-index:3;width:22px;height:22px;border-radius:50%;
   border:1px solid #fff8;background:#000a;color:#fff;font-size:12px;cursor:pointer;padding:0;line-height:1}
 .libCheck.on{background:var(--accent);border-color:var(--accent);color:#031425}
-.libThumb{position:relative;aspect-ratio:16/9;background:#000;overflow:hidden}
-.libThumb img{width:100%;height:100%;object-fit:cover;display:block}
+/* padding-ratio, not aspect-ratio: a flex-column child collapses to height 0
+   with aspect-ratio in some engines, which crushed every card to a strip */
+.libThumb{position:relative;width:100%;height:0;padding-bottom:56.25%;flex:none;background:#000;overflow:hidden}
+.libThumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .libScrub{position:absolute;inset:0;background-repeat:no-repeat;opacity:0;pointer-events:none}
 .libScrub.on{opacity:1}
 .libThumb:hover .libScrub.on{opacity:1}
@@ -267,3 +270,23 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .edTag{background:#0e2733;color:var(--accent2);border-radius:12px;padding:2px 8px;font-size:11.5px;display:flex;gap:5px;align-items:center}
 .edTag b{cursor:pointer;color:#8fb6e6;font-weight:400}
 .edTagAdd{background:#101214;border:1px solid var(--line);border-radius:10px;padding:3px 8px;width:70px;color:var(--fg);font-size:11.5px}
+
+/* --- library download/queue status row --- */
+.libStatusRow{display:flex;gap:8px;padding:8px 16px 0;flex-wrap:wrap;align-items:center}
+.statChip{background:#191c21;border:1px solid var(--line);border-radius:12px;padding:3px 11px;font-size:11.5px;cursor:pointer;color:var(--dim)}
+.statChip b{color:var(--fg);margin-left:2px}
+.statChip.on{background:var(--accent);border-color:var(--accent);color:#031425}
+.statChip.on b{color:#031425}
+.statChip.busy.on{background:var(--warn);border-color:var(--warn)}
+.statChip.ok.on{background:var(--ok);border-color:var(--ok)}
+.statChip.bad{color:#ffb3c0;border-color:#5a2a30}
+.statChip.bad.on{background:var(--mask);border-color:var(--mask);color:#fff}
+.libDlWrap{display:flex;align-items:center;gap:8px;min-width:180px}
+.libDlBar{width:90px;height:5px;background:#2a2f37;border-radius:3px;overflow:hidden}
+.libDlBar span{display:block;height:100%;background:var(--accent2);width:0;transition:width .2s}
+
+/* --- library artist/sort filter row --- */
+.libFilterRow{display:flex;gap:8px;align-items:center;padding:8px 16px 0;flex-wrap:wrap}
+.libFilterSel{background:#101214;border:1px solid var(--line);border-radius:7px;padding:5px 8px;color:var(--fg);
+  font-size:12px;max-width:220px}
+.libFilterRow .hint{margin-left:4px}
