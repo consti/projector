@@ -98,6 +98,7 @@ function frame() {
     if (patternKind !== 'off') { patternKind = 'off'; patternCanvas = null; }
     engine.setSource(player.video, { gated: player.frameGated });
     engine.setSourceCrop(state.transport.source && state.transport.source.crop);
+    if (state.audioOut === role) player.setSink(state.settings && state.settings.audioSinkId || '');
     player.update(state.transport || {}, { audible: state.audioOut === role });
   }
 

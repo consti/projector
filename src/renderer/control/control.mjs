@@ -43,6 +43,7 @@ const fmtTime = (s) => {
 let S = null;                       // full state from main
 let project = defaultProject();     // locally-owned, authoritative while editing
 let displays = [];
+let audioDevices = [];   // Mac audio output devices (incl. AirPlay), for the sink selector
 let mappings = { items: [], current: null };
 let mappingName = '';
 let epoch = -1;
@@ -194,7 +195,17 @@ const camera = new CameraPanel({
   frameSize: () => stage.frameSize || [0, 0],
 });
 camera.refreshDevices();
-navigator.mediaDevices?.addEventListener?.('devicechange', () => camera.refreshDevices());
+async function refreshAudioOutputs() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
+    audioDevices = devs.map((d) => ({ id: d.deviceId, label: d.label || 'Output' }));
+    remote.pushDeck(true);
+    syncInspector();
+  } catch {}
+}
+refreshAudioOutputs();
+setTimeout(refreshAudioOutputs, 2500);   // labels appear once the camera panel has unlocked device access
+navigator.mediaDevices?.addEventListener?.('devicechange', () => { camera.refreshDevices(); refreshAudioOutputs(); });
 
 $('#camAlign').onclick = () => camera.beginAlign();
 $('#camOff').onclick = () => { camera.stop(); camera.applyWarp(); };
@@ -255,7 +266,36 @@ function deckState() {
       }),
     },
     blackout: !!project.global.blackout,
+    outputs: {
+      projector: !!(S && S.outputs && S.outputs.projector.enabled),
+      tv: !!(S && S.outputs && S.outputs.tv.enabled),
+      projectorLabel: (S && S.outputs && S.outputs.projector.displayLabel) || null,
+      tvLabel: (S && S.outputs && S.outputs.tv.displayLabel) || null,
+    },
+    audio: {
+      target: (S && S.settings && S.settings.audioTarget) || 'auto',
+      out: (S && S.audioOut) || 'control',
+      sinkId: (S && S.settings && S.settings.audioSinkId) || '',
+      sinkLabel: (S && S.settings && S.settings.audioSinkLabel) || 'System default',
+      devices: audioDevices,
+    },
+    queue: queueState(),
   };
+}
+
+// The now-playing item plus a window of what's coming up, for the phone queue.
+function queueState() {
+  const pl = (S && S.playlist) || { items: [], index: -1 };
+  const idx = pl.index;
+  const items = pl.items.map((it, i) => ({
+    i, title: it.title || '', artist: it.artist || null,
+    from: it.from || (it.kind === 'file' ? 'file' : it.kind === 'library' ? 'library' : 'stream'),
+    cur: i === idx, discovered: !!it.discovered,
+  }));
+  // keep the payload small: current item and the next 30
+  const start = Math.max(0, idx);
+  return { index: idx, total: pl.items.length, name: pl.name || null, autoDiscover: !!pl.autoDiscover,
+    items: items.slice(start, start + 31) };
 }
 
 // The static menus (effect types, scene names, qualities), sent once on hello.
@@ -312,6 +352,27 @@ function remoteControl(op, a = {}) {
       pushProject(); return;
     case 'quality': if (QUALITY_KEYS.includes(a.value)) { fx.quality = a.value; pushProject(true); buildInspector(); } return;
     case 'blackout': project.global.blackout = !project.global.blackout; pushProject(true); return;
+
+    // --- transport / queue / outputs / audio, for the phone ---
+    case 'output': api.setOutput(a.role, { enabled: !!a.enabled }); return;
+    case 'playIndex': api.cmd('load', a.index); return;
+    case 'removeIndex': {
+      const items = S.playlist.items.slice(); if (a.index < 0 || a.index >= items.length) return;
+      items.splice(a.index, 1);
+      api.setPlaylist(items, S.playlist.index > a.index ? S.playlist.index - 1 : S.playlist.index);
+      return;
+    }
+    case 'addUrl': if (a.url) api.addUrl(a.url).then((r) => toast('Queued ' + ((r && r.count) || 1) + ' from YouTube')).catch((e) => toast('Could not add: ' + e.message)); return;
+    case 'addLibrary': api.libraryPlay([a.id], { play: !!a.play }); return;
+    case 'addLibraryToLibrary': if (a.url) api.libraryAdd([a.url], {}); return;
+    case 'audioTarget': api.patchState({ settings: { audioTarget: a.value } }); return;
+    case 'audioSink': {
+      const d = audioDevices.find((x) => x.id === a.id);
+      api.patchState({ settings: { audioSinkId: a.id || null, audioSinkLabel: d ? d.label : (a.id ? a.label : null) } });
+      return;
+    }
+    case 'autoDiscover': api.setAutoDiscover(!!a.on); syncPlaylistTools(); return;
+    case 'libSub': remote.setLibrarySub(true); remote.sendLibrary(libraryView.items); return;
   }
 }
 
@@ -322,7 +383,7 @@ const libraryView = new LibraryView($('#libraryView'), {
   toggleDiscover: () => toggleDiscover(),
 });
 api.library().then((items) => libraryView.setItems(items));
-api.onLibrary((items) => libraryView.setItems(items));
+api.onLibrary((items) => { libraryView.setItems(items); remote.sendLibrary(items); });
 api.onLibraryProgress(({ id, progress }) => libraryView.setProgress(id, progress));
 api.onLibraryToast((m) => toast(m));
 $('#libBtn').onclick = () => libraryView.toggle();
@@ -683,6 +744,11 @@ function outputSection() {
   rows.push(el('div', { class: 'hint', text: 'Playing audio from: ' + (S.audioOut || 'control') +
     (S.settings.audioTarget !== 'auto' && S.settings.audioTarget !== S.audioOut && S.settings.audioTarget !== 'none'
       ? '  (the ' + S.settings.audioTarget + ' window is not open)' : '') }));
+  rows.push(selectRow('Output device',
+    [['', 'System default'], ...audioDevices.map((d) => [d.id, d.label])],
+    () => S.settings.audioSinkId || '',
+    (v) => { const d = audioDevices.find((x) => x.id === v); api.patchState({ settings: { audioSinkId: v || null, audioSinkLabel: d ? d.label : null } }); }));
+  rows.push(el('div', { class: 'hint', text: 'Send the sound to a specific output (e.g. an AirPlay receiver) without changing the Mac’s system default.' }));
   rows.push(selectRow('YouTube max', [['720', '720p'], ['1080', '1080p'], ['1440', '1440p'], ['2160', '4K']],
     () => S.settings.maxHeight || 1080, (v) => api.patchState({ settings: { maxHeight: Number(v) } })));
   rows.push(el('div', { class: 'row' }, [
@@ -1267,6 +1333,7 @@ function frame() {
       stage.engine.setSource(player.video, { gated: player.frameGated });
       stage.engine.setSourceCrop(S.transport.source && S.transport.source.crop);
       if (S.settings.livePreview !== false) {
+        if (S.audioOut === 'control') player.setSink(S.settings.audioSinkId || '');
         player.update(S.transport, { audible: S.audioOut === 'control' });
       } else if (!player.video.paused) {
         player.video.pause();     // don't leave it drifting behind the clock

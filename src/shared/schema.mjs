@@ -171,6 +171,8 @@ export function defaultState() {
     },
     settings: {
       audioTarget: 'auto',     // auto | tv | projector | control | none
+      audioSinkId: null,       // Mac audio output device (setSinkId); null = system default
+      audioSinkLabel: null,
       livePreview: true,
       cameraDeviceId: null,
       fitMode: 'contain',      // for 'fill' outputs: contain | cover | stretch

@@ -29,8 +29,8 @@ const st = {
   aligning: false, handles: null, drag: null,
   info: { models: false },
   wake: null,
-  view: prefs.get('view', 'stage'),   // stage (camera) | control (effects deck)
-  deck: null, catalog: null,
+  view: prefs.get('view', 'stage'),   // stage (camera) | control (effects deck) | queue
+  deck: null, catalog: null, library: [], libFilter: '',
 };
 
 // ---------------------------------------------------------- websocket ----
@@ -58,7 +58,8 @@ function onMessage(m) {
   switch (m.t) {
     case 'config': Object.assign(st.cfg, m); ui(); break;
     case 'catalog': st.catalog = m; renderDeck(); break;
-    case 'deck': st.deck = m; renderDeck(); break;
+    case 'deck': st.deck = m; renderDeck(); renderQueue(); break;
+    case 'library': st.library = m.items || []; renderQueue(); break;
     case 'calibOk': leaveAlign(false); toast('Aligned. Now press Track.'); break;
     case 'toast': toast(m.text); break;
     case 'pong': st.latency = Math.round(performance.now() - m.ts); break;
@@ -412,10 +413,13 @@ function ctl(op, extra = {}) { send({ t: 'ctl', op, ...extra }); }
 
 function setView(v) {
   st.view = v; prefs.set('view', v);
-  document.body.classList.toggle('control', v === 'control');
+  const panel = v === 'control' || v === 'queue';
+  document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
   for (const b of document.querySelectorAll('#viewSeg button')) b.classList.toggle('on', b.dataset.view === v);
   $('#deck').hidden = v !== 'control';
+  $('#queue').hidden = v !== 'queue';
   if (v === 'control') { send({ t: 'deckSub' }); renderDeck(); }
+  if (v === 'queue') { send({ t: 'deckSub' }); send({ t: 'ctl', op: 'libSub' }); renderQueue(); }
   ui();
 }
 
@@ -472,6 +476,20 @@ function buildDeck(root) {
       h('button', { class: 'accent', text: '✳ Trigger all', onclick: () => ctl('triggerAll') }),
       refs.black,
     ]),
+  ]));
+
+  // --- outputs & audio
+  refs.projBtn = h('button', { class: 'grow', text: 'Projector', onclick: () => ctl('output', { role: 'projector', enabled: !(st.deck.outputs && st.deck.outputs.projector) }) });
+  refs.tvBtn = h('button', { class: 'grow', text: 'TV', onclick: () => ctl('output', { role: 'tv', enabled: !(st.deck.outputs && st.deck.outputs.tv) }) });
+  refs.audioTarget = h('select', {}, [['auto', 'Auto'], ['tv', 'TV'], ['projector', 'Projector'], ['control', 'Mac window'], ['none', 'Muted']].map(([v, t]) => h('option', { value: v, text: t })));
+  refs.audioTarget.addEventListener('change', () => ctl('audioTarget', { value: refs.audioTarget.value }));
+  refs.audioSink = h('select', {});
+  refs.audioSink.addEventListener('change', () => { const o = refs.audioSink.selectedOptions[0]; ctl('audioSink', { id: refs.audioSink.value, label: o ? o.textContent : '' }); });
+  root.append(h('div', { class: 'dsec' }, [
+    h('div', { class: 'dhead', text: 'Output' }),
+    h('div', { class: 'drow' }, [refs.projBtn, refs.tvBtn]),
+    h('div', { class: 'dctl' }, [h('label', { text: 'Audio' }), refs.audioTarget]),
+    h('div', { class: 'dctl' }, [h('label', { text: 'Device' }), refs.audioSink]),
   ]));
 
   // --- scenes
@@ -553,6 +571,109 @@ function updateDeck() {
   const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); } };
   setS(refs.grav, d.fx.gravity); setS(refs.wind, d.fx.wind); setS(refs.time, d.fx.timeScale);
   if (refs.qsel && refs.qsel !== active) refs.qsel.value = d.fx.quality;
+  // outputs + audio
+  const o = d.outputs || {};
+  if (refs.projBtn) { refs.projBtn.classList.toggle('on', !!o.projector); refs.projBtn.textContent = 'Projector' + (o.projectorLabel ? '' : ''); }
+  if (refs.tvBtn) refs.tvBtn.classList.toggle('on', !!o.tv);
+  const au = d.audio || {};
+  if (refs.audioTarget && refs.audioTarget !== active) refs.audioTarget.value = au.target || 'auto';
+  if (refs.audioSink && refs.audioSink !== active) {
+    const want = JSON.stringify([au.sinkId || '', (au.devices || []).map((x) => x.id)]);
+    if (refs.audioSink._key !== want) {
+      refs.audioSink._key = want;
+      refs.audioSink.innerHTML = '';
+      refs.audioSink.append(h('option', { value: '', text: 'System default' }));
+      for (const dev of au.devices || []) refs.audioSink.append(h('option', { value: dev.id, text: dev.label }));
+    }
+    refs.audioSink.value = au.sinkId || '';
+  }
+}
+
+// ------------------------------------------------------------- queue view ---
+let queueShape = '';
+function renderQueue() {
+  if (st.view !== 'queue') return;
+  const root = $('#queue');
+  const d = st.deck;
+  if (!d) { root.textContent = ''; root.append(h('div', { class: 'dhint', text: 'Waiting for the app…' })); return; }
+  const q = d.queue || { items: [], index: -1 };
+  const shape = JSON.stringify([q.items.map((i) => i.i + i.cur), st.library.map((l) => l.id + l.status), st.libFilter]);
+  if (shape === queueShape) { return; }
+  queueShape = shape;
+  root.innerHTML = '';
+
+  // now playing
+  const np = q.items.find((i) => i.cur) || (d.transport.has ? { title: d.transport.title } : null);
+  root.append(h('div', { class: 'dsec' }, [
+    h('div', { class: 'dhead', text: 'Now playing' }),
+    h('div', { class: 'dtitle', text: np ? np.title : 'Nothing playing' }),
+    h('div', { class: 'drow' }, [
+      h('button', { text: '⏮', onclick: () => ctl('transport', { cmd: 'prev' }) }),
+      h('button', { class: 'big', text: d.transport.playing ? '⏸' : '▶', onclick: () => ctl('transport', { cmd: 'toggle' }) }),
+      h('button', { text: '⏭', onclick: () => ctl('transport', { cmd: 'next' }) }),
+    ]),
+  ]));
+
+  // add from YouTube
+  const urlInp = h('input', { type: 'text', placeholder: 'Paste a YouTube link', inputmode: 'url' });
+  const addUrl = (toLib) => { const u = urlInp.value.trim(); if (!u) return; ctl(toLib ? 'addLibraryToLibrary' : 'addUrl', { url: u }); urlInp.value = ''; toast(toLib ? 'Downloading to library…' : 'Added to queue'); };
+  urlInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addUrl(false); });
+  root.append(h('div', { class: 'dsec' }, [
+    h('div', { class: 'dhead', text: 'Add from YouTube' }),
+    urlInp,
+    h('div', { class: 'drow' }, [
+      h('button', { class: 'grow accent', text: 'Queue', onclick: () => addUrl(false) }),
+      h('button', { class: 'grow', text: 'Save to library', onclick: () => addUrl(true) }),
+    ]),
+  ]));
+
+  // up next
+  const upNext = q.items.filter((i) => !i.cur && i.i > q.index);
+  const nextBox = h('div', { class: 'qlist' });
+  if (!upNext.length) nextBox.append(h('div', { class: 'dhint', text: 'Nothing queued.' }));
+  for (const it of upNext.slice(0, 30)) {
+    nextBox.append(h('div', { class: 'qrow' }, [
+      h('div', { class: 'qinfo' }, [
+        h('div', { class: 'qtitle', text: it.title }),
+        h('div', { class: 'qbadge', text: it.from + (it.discovered ? ' · auto' : '') }),
+      ]),
+      h('button', { class: 'qplay', text: '▶', onclick: () => ctl('playIndex', { index: it.i }) }),
+      h('button', { class: 'qx', text: '✕', onclick: () => ctl('removeIndex', { index: it.i }) }),
+    ]));
+  }
+  root.append(h('div', { class: 'dsec' }, [
+    h('div', { class: 'drow' }, [h('div', { class: 'dhead grow', text: 'Up next (' + upNext.length + ')' }),
+      h('button', { class: 'small' + (q.autoDiscover ? ' on' : ''), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) })]),
+    nextBox,
+  ]));
+
+  // library browse
+  const search = h('input', { type: 'search', placeholder: 'Search library', value: st.libFilter });
+  search.addEventListener('input', () => { st.libFilter = search.value; queueShape = ''; renderLibList(libBox); });
+  const libBox = h('div', { class: 'qlist' });
+  renderLibList(libBox);
+  root.append(h('div', { class: 'dsec' }, [
+    h('div', { class: 'dhead', text: 'From library' }),
+    search, libBox,
+  ]));
+}
+
+function renderLibList(box) {
+  box.innerHTML = '';
+  const q = st.libFilter.toLowerCase();
+  const list = st.library.filter((l) => l.status === 'ready' && (!q || (l.artist + ' ' + l.title).toLowerCase().includes(q)));
+  if (!st.library.length) { box.append(h('div', { class: 'dhint', text: 'Library is empty. Add YouTube links above or on the Mac.' })); return; }
+  if (!list.length) { box.append(h('div', { class: 'dhint', text: 'No ready matches.' })); return; }
+  for (const l of list.slice(0, 60)) {
+    box.append(h('div', { class: 'qrow' }, [
+      h('div', { class: 'qinfo' }, [
+        h('div', { class: 'qtitle', text: l.artist ? l.artist + ' — ' + l.title : l.title }),
+        h('div', { class: 'qbadge', text: 'library' + (l.height ? ' · ' + (l.height >= 2160 ? '4K' : l.height + 'p') : '') }),
+      ]),
+      h('button', { class: 'qplay', text: '▶', title: 'Play now', onclick: () => ctl('addLibrary', { id: l.id, play: true }) }),
+      h('button', { class: 'qadd', text: '＋', title: 'Queue', onclick: () => { ctl('addLibrary', { id: l.id, play: false }); toast('Queued'); } }),
+    ]));
+  }
 }
 
 for (const b of document.querySelectorAll('#viewSeg button')) b.addEventListener('click', () => setView(b.dataset.view));

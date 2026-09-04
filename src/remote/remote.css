@@ -105,3 +105,21 @@ button.on{background:var(--ok);border-color:var(--ok);color:#052a12;font-weight:
 .dctl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-9px;border-radius:50%;background:var(--fg);border:0}
 .dval{text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--dim)}
 .dctl select{min-height:38px}
+
+/* --- queue view --- */
+#queue{position:fixed;left:0;right:0;top:0;bottom:0;z-index:15;overflow-y:auto;overscroll-behavior:contain;
+  background:#0c0d10;padding:calc(var(--sat) + 52px) calc(var(--sar) + 12px) calc(var(--sab) + 20px) calc(var(--sal) + 12px);
+  display:flex;flex-direction:column;gap:10px;touch-action:pan-y}
+#queue[hidden]{display:none}
+#queue input[type=text],#queue input[type=search]{width:100%}
+.qlist{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow-y:auto}
+.qrow{display:flex;align-items:center;gap:8px;background:#131519;border:1px solid var(--line);border-radius:10px;padding:8px 9px}
+.qinfo{flex:1;min-width:0}
+.qtitle{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qbadge{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-top:2px}
+.qrow button{min-height:40px;min-width:44px;padding:6px 10px;flex:none}
+.qplay{background:rgba(57,160,255,.16);border-color:rgba(57,160,255,.5)}
+.qx{color:var(--bad)}
+.qadd{background:rgba(52,199,89,.16);border-color:rgba(52,199,89,.5)}
+button.small{min-height:32px;padding:5px 10px;font-size:12.5px;flex:none}
+button.small.on{background:var(--ok);border-color:var(--ok);color:#052a12;font-weight:600}

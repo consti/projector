@@ -163,6 +163,17 @@ export class Player {
 
   get separateAudio() { return !!this.audio.getAttribute('src'); }
 
+  // Route this window's audio to a specific output device (e.g. an AirPlay
+  // receiver) via setSinkId, without touching the Mac's system default.
+  setSink(id) {
+    id = id || '';
+    if (this._sinkId === id) return;
+    this._sinkId = id;
+    for (const el of [this.audio, this.video]) {
+      if (el.setSinkId) el.setSinkId(id).catch(() => {});
+    }
+  }
+
   // Nudge both tracks toward the shared clock. Called every animation frame.
   update(t, opts = {}) {
     const audible = !!opts.audible && !t.muted;

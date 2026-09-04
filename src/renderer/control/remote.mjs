@@ -324,6 +324,17 @@ export class RemotePanel {
   catalogMsg() { return { t: 'catalog', ...(this.hooks.catalog ? this.hooks.catalog() : {}) }; }
   deckMsg(force) { return { t: 'deck', ...(this.hooks.deck ? this.hooks.deck() : {}) }; }
 
+  setLibrarySub(on) { this.librarySub = !!on; }
+  /** Send a compact library list to phones that opened the queue tab. */
+  sendLibrary(items) {
+    if (!this.librarySub || !this.info.running || !(this.info.clients || []).length) return;
+    const lib = (items || []).map((e) => ({
+      id: e.id, artist: e.artist || '', title: e.title || '', duration: e.duration || 0,
+      status: e.status, height: e.height || 0,
+    }));
+    api.remoteSend(null, { t: 'library', items: lib });
+  }
+
   /** Once per frame: keep the phones told about what changed. */
   pushConfig(force) {
     if (!this.info.running || !(this.info.clients || []).length) return;
