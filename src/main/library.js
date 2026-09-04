@@ -113,8 +113,13 @@ class Library extends EventEmitter {
 
   _save() {
     clearTimeout(this._saveTimer);
-    this._saveTimer = setTimeout(() => {
-      try { fs.writeFileSync(this.indexFile, JSON.stringify({ version: 1, items: [...this.items.values()] }, null, 2)); }
+    this._saveTimer = setTimeout(async () => {
+      // async so a large index write never blocks the main event loop that is
+      // also piping media bytes for the proxy
+      let data;
+      try { data = JSON.stringify({ version: 1, items: [...this.items.values()] }, null, 2); }
+      catch (e) { console.log('[library] serialize failed', e.message); return; }
+      try { await fs.promises.writeFile(this.indexFile, data); }
       catch (e) { console.log('[library] save failed', e.message); }
     }, 400);
   }

@@ -62,10 +62,14 @@ function sessionFile() { return path.join(app.getPath('userData'), 'session.json
 let saveTimer = null;
 function autosave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
+  saveTimer = setTimeout(async () => {
+    // The media proxy pipes bytes through this process, so the write must not
+    // be synchronous — a writeFileSync of a large session (a long playlist)
+    // blocks the event loop long enough to hitch playback. Serialise off the
+    // hot path and write asynchronously.
+    let data;
     try {
-      fs.mkdirSync(app.getPath('userData'), { recursive: true });
-      fs.writeFileSync(sessionFile(), JSON.stringify({
+      data = JSON.stringify({
         project: state.project,
         projectPath: state.projectPath,
         mappingName: state.mappingName || null,
@@ -79,7 +83,11 @@ function autosave() {
           muted: state.transport.muted,
           rate: state.transport.rate,
         },
-      }, null, 2));
+      }, null, 2);
+    } catch (e) { console.log('autosave serialize failed:', e.message); return; }
+    try {
+      await fs.promises.mkdir(app.getPath('userData'), { recursive: true });
+      await fs.promises.writeFile(sessionFile(), data);
     } catch (e) { console.log('autosave failed:', e.message); }
   }, 800);
 }
@@ -770,7 +778,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // goes straight to Node instead of paying the retry tax again (~360 ms/request,
 // which is what turns a routing quirk into audible hitching).
 const badHosts = new Map();          // host -> last-failed ms
-const BAD_TTL = 60000;
+// A googlevideo edge that fails Chromium's net stack stays failed for the life
+// of the stream URL (hours), so keep the memo well past that: re-probing
+// mid-video costs a multi-hundred-ms range stall that can hitch playback.
+const BAD_TTL = 6 * 3600 * 1000;
 
 function hostOf(u) { try { return new URL(u).host; } catch { return ''; } }
 function isBadHost(h) {
@@ -790,7 +801,10 @@ async function proxyStream(req, remote) {
 
   let last = null;
   if (!isBadHost(host)) {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Retry a 5xx (a transient CDN blip) once, but a thrown connection error is
+    // this host refusing Chromium's net stack — don't burn time retrying it,
+    // drop straight to the Node path which does not go through Chromium.
+    for (let attempt = 0; attempt < 2; attempt++) {
       if (req.signal && req.signal.aborted) return new Response(null, { status: 499 });
       try {
         const res = await net.fetch(remote, {
@@ -799,13 +813,12 @@ async function proxyStream(req, remote) {
           signal: req.signal,        // release the upstream socket when media aborts a range
           bypassCustomProtocolHandlers: true,
         });
-        if (res.status >= 500 && attempt < 2) {
+        if (res.status >= 500 && attempt < 1) {
           last = new Error('upstream ' + res.status);
           try { res.body && res.body.cancel(); } catch {}
-          await sleep(120 * (attempt + 1));
+          await sleep(100);
           continue;
         }
-        if (attempt) console.log('[proxy] recovered after', attempt, 'retr' + (attempt === 1 ? 'y' : 'ies'));
         badHosts.delete(host);
         return res;
       } catch (e) {
@@ -813,7 +826,7 @@ async function proxyStream(req, remote) {
           return new Response(null, { status: 499 });
         }
         last = e;
-        if (attempt < 2) await sleep(120 * (attempt + 1));
+        break;      // connection error: go to Node now, don't retry net.fetch
       }
     }
     if (!badHosts.has(host)) console.log('[proxy] net.fetch failing on', host, '- using node http from here on');

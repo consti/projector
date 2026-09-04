@@ -1283,7 +1283,7 @@ function frame() {
       lastAudioSend = performance.now();
       api.fxAudio(fxHost.outgoingAudio);
     }
-    stage.engine.render(project, { mode: 'mapped', dimOverride: 1 });
+    stage.engine.render(project, { mode: 'mapped', dimOverride: 1, blend: player.blendFactor(project.global.smoothMotion) });
     stage.draw();
     if (project.fx?.interact?.cameraDebug && project.fx.interact.camera) {
       const c = $('#ovc'), dpr = window.devicePixelRatio || 1;

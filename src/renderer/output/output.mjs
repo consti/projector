@@ -128,7 +128,7 @@ function frame() {
     api.fxAudio(fx.outgoingAudio);
   }
 
-  engine.render(p, { mode: cfg.mode, fit: state.settings?.fitMode || 'contain' });
+  engine.render(p, { mode: cfg.mode, fit: state.settings?.fitMode || 'contain', blend: player.blendFactor(g.smoothMotion) });
 
   const t = state.transport || {};
   let msg = '';

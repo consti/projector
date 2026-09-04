@@ -494,6 +494,7 @@ export class Engine {
     const dim = opts.dimOverride != null ? opts.dimOverride
       : (g.blackout ? 0 : 1) * (g.brightness == null ? 1 : g.brightness);
     const hasSrc = this._uploadSource();
+    const blend = opts.blend != null ? opts.blend : this._blendFactor(g.smoothMotion);
 
     if (mode === 'fill') {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -520,7 +521,7 @@ export class Engine {
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
       gl.uniform1i(this.progDirect.u.uPrev, 1);
-      gl.uniform1f(this.progDirect.u.uBlend, this._blendFactor(g.smoothMotion));
+      gl.uniform1f(this.progDirect.u.uBlend, blend);
       gl.uniform4f(this.progDirect.u.uRect, rect[0], rect[1], rect[2], rect[3]);
       gl.uniform4f(this.progDirect.u.uCrop, cr[0], cr[1], cr[2], cr[3]);
       gl.uniform1f(this.progDirect.u.uDim, dim);
@@ -546,7 +547,7 @@ export class Engine {
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
       gl.uniform1i(this.progSurface.u.uPrev, 1);
-      gl.uniform1f(this.progSurface.u.uBlend, this._blendFactor(g.smoothMotion));
+      gl.uniform1f(this.progSurface.u.uBlend, blend);
       const U = this.progSurface.u;
       gl.uniform4f(U.uCrop, this.crop[0], this.crop[1], this.crop[2], this.crop[3]);
 

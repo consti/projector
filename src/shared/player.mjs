@@ -36,6 +36,8 @@ export class Player {
     this.onFrame = null;       // fires once per presented video frame
     this.frameId = 0;
     this._rvfc = false;
+    this._frameInterval = 0;   // seconds between decoded frames (from rVFC mediaTime)
+    this._lastFrameMedia = 0;
     this.status = 'idle';
     this._lastSeek = 0;
     this._lastResync = 0;
@@ -55,8 +57,22 @@ export class Player {
   _startFrameLoop() {
     if (this._rvfc || !this.video.requestVideoFrameCallback) return;
     this._rvfc = true;
-    const step = () => {
+    const step = (now, metadata) => {
       this.frameId++;
+      // The frame's own media timestamp is exact, unlike the wall-clock gap
+      // between uploads (which jitters by a whole refresh on a 24 fps source
+      // shown at 60 Hz). Use it to know the true source frame rate and where
+      // the display sits between two decoded frames, so the smooth-motion
+      // cross-fade is timed correctly instead of guessing.
+      if (metadata && typeof metadata.mediaTime === 'number') {
+        const dt = metadata.mediaTime - this._lastFrameMedia;
+        this._lastFrameMedia = metadata.mediaTime;
+        if (dt > 0.005 && dt < 0.2) {
+          this._frameInterval = this._frameInterval ? this._frameInterval * 0.8 + dt * 0.2 : dt;
+        } else if (dt < 0 || dt > 0.5) {
+          this._frameInterval = 0;   // a seek or a stall: forget the cadence
+        }
+      }
       if (this.onFrame) this.onFrame();
       this.video.requestVideoFrameCallback(step);
     };
@@ -64,6 +80,19 @@ export class Player {
   }
 
   get frameGated() { return this._rvfc; }
+  get sourceFps() { return this._frameInterval > 0 ? 1 / this._frameInterval : 0; }
+
+  /**
+   * How far the display is through the interval between the two most recent
+   * decoded frames, 0..1, for cross-fading them. 1 (show the newest outright)
+   * when smoothing is off, the cadence is unknown, or the source is already
+   * ≥48 fps (even enough that blending would only soften the picture).
+   */
+  blendFactor(on) {
+    if (!on || !this._frameInterval || this._frameInterval < 1 / 48) return 1;
+    const phase = (this.video.currentTime - this._lastFrameMedia) / this._frameInterval;
+    return Math.min(1, Math.max(0, phase));
+  }
 
   /**
    * @param source transport source, or null
@@ -81,6 +110,8 @@ export class Player {
     this._urls = { video: videoUrl, audio: (source && source.audioUrl) || null };
     this._stall = {};
     this.recoveries = 0;
+    this._frameInterval = 0;
+    this._lastFrameMedia = 0;
     if (!source) {
       this.video.removeAttribute('src'); this.video.load();
       this.audio.removeAttribute('src'); this.audio.load();
