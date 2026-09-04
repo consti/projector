@@ -3,11 +3,33 @@ const { app, BrowserWindow, ipcMain, protocol, screen, dialog, net, globalShortc
         powerSaveBlocker, Menu, shell, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 const { Readable } = require('stream');
 const ytdlp = require('./ytdlp');
+const { RemoteServer } = require('./remote');
 
 const ROOT = path.join(__dirname, '..');           // .../src
 const isDev = process.argv.includes('--dev');
+
+// --user-data=<dir>: keep a development instance's session apart from the
+// installed app's. --dev-remote: open the phone page in a window with a
+// synthetic camera, so it can be driven without a phone.
+const userDataArg = process.argv.find((a) => a.startsWith('--user-data='));
+if (userDataArg) app.setPath('userData', path.resolve(userDataArg.slice('--user-data='.length)));
+// YouTube's CDN offers HTTP/3, and Chromium takes it. On networks where UDP
+// 443 is flaky or black-holed (VPN tunnels, some venue Wi-Fi) the QUIC
+// connection hangs or fails outright while TCP is fine — the symptoms are
+// "FFmpegDemuxer: open context failed", playback parking a few seconds in, and
+// range requests that never come back. curl, which uses TCP, sees none of it.
+// Video streaming does not need QUIC, so take it out of the picture.
+app.commandLine.appendSwitch('disable-quic');
+
+const devRemote = process.argv.includes('--dev-remote');
+if (devRemote) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -29,6 +51,7 @@ let state = null;
 const outputs = new Map();     // role -> BrowserWindow
 let control = null;
 let psbId = null;
+let remote = null;             // phone-camera server, see remote.js
 const resolveCache = new Map();
 
 // ------------------------------------------------------------- persistence -
@@ -658,42 +681,113 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * play — so a transient socket error or a 5xx from the CDN is retried here
  * rather than surfaced. Genuine aborts (the element seeking away, or the track
  * changing) are not retried: those are supposed to fail.
+ *
+ * Some googlevideo edge hosts make Chromium's own net stack fail with a bare
+ * ERR_FAILED on every attempt while the host is perfectly reachable over plain
+ * TCP (curl and Node both fetch it fine) — seen on VPN tunnels and some venue
+ * Wi-Fi. When net.fetch is exhausted, the request is retried once through
+ * Node's HTTP stack, which does not go through Chromium and gets past it. That
+ * body is still handed back as a native stream, so throughput is unaffected.
  */
+// Hosts on which Chromium's net stack has failed. A dead host tends to stay
+// dead for the life of a stream, so once one is known bad every further range
+// goes straight to Node instead of paying the retry tax again (~360 ms/request,
+// which is what turns a routing quirk into audible hitching).
+const badHosts = new Map();          // host -> last-failed ms
+const BAD_TTL = 60000;
+
+function hostOf(u) { try { return new URL(u).host; } catch { return ''; } }
+function isBadHost(h) {
+  const t = badHosts.get(h);
+  if (t == null) return false;
+  if (Date.now() - t > BAD_TTL) { badHosts.delete(h); return false; }
+  return true;
+}
+
 async function proxyStream(req, remote) {
   if (!/^https?:\/\//.test(remote || '')) return new Response('bad url', { status: 400 });
   const headers = { 'user-agent': UA, origin: 'https://www.youtube.com', referer: 'https://www.youtube.com/' };
   const range = req.headers.get('range');
   if (range) headers.range = range;
   const method = req.method === 'HEAD' ? 'HEAD' : 'GET';
+  const host = hostOf(remote);
 
   let last = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (req.signal && req.signal.aborted) return new Response(null, { status: 499 });
-    try {
-      const res = await net.fetch(remote, {
-        method,
-        headers,
-        signal: req.signal,        // release the upstream socket when media aborts a range
-        bypassCustomProtocolHandlers: true,
-      });
-      if (res.status >= 500 && attempt < 2) {
-        last = new Error('upstream ' + res.status);
-        try { res.body && res.body.cancel(); } catch {}
-        await sleep(120 * (attempt + 1));
-        continue;
+  if (!isBadHost(host)) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (req.signal && req.signal.aborted) return new Response(null, { status: 499 });
+      try {
+        const res = await net.fetch(remote, {
+          method,
+          headers,
+          signal: req.signal,        // release the upstream socket when media aborts a range
+          bypassCustomProtocolHandlers: true,
+        });
+        if (res.status >= 500 && attempt < 2) {
+          last = new Error('upstream ' + res.status);
+          try { res.body && res.body.cancel(); } catch {}
+          await sleep(120 * (attempt + 1));
+          continue;
+        }
+        if (attempt) console.log('[proxy] recovered after', attempt, 'retr' + (attempt === 1 ? 'y' : 'ies'));
+        badHosts.delete(host);
+        return res;
+      } catch (e) {
+        if ((e && e.name === 'AbortError') || (req.signal && req.signal.aborted)) {
+          return new Response(null, { status: 499 });
+        }
+        last = e;
+        if (attempt < 2) await sleep(120 * (attempt + 1));
       }
-      if (attempt) console.log('[proxy] recovered after', attempt, 'retr' + (attempt === 1 ? 'y' : 'ies'));
-      return res;
-    } catch (e) {
-      if ((e && e.name === 'AbortError') || (req.signal && req.signal.aborted)) {
-        return new Response(null, { status: 499 });
-      }
-      last = e;
-      if (attempt < 2) await sleep(120 * (attempt + 1));
     }
+    if (!badHosts.has(host)) console.log('[proxy] net.fetch failing on', host, '- using node http from here on');
+    badHosts.set(host, Date.now());
   }
+
+  // Chromium's net stack cannot reach this host; use Node's instead.
+  try {
+    return await nodeFetch(remote, { method, headers, signal: req.signal });
+  } catch (e) {
+    if ((e && e.name === 'AbortError') || (req.signal && req.signal.aborted)) {
+      return new Response(null, { status: 499 });
+    }
+    last = e;
+  }
+
   console.log('[proxy] gave up:', last && (last.name + ': ' + last.message), '|', String(remote).slice(0, 90));
   return new Response('proxy error: ' + (last && last.message), { status: 502 });
+}
+
+/**
+ * Fetch a URL through Node's own HTTP stack and hand the response back as a
+ * native (Web)Response, following redirects. Used only as the proxy's fallback
+ * when Chromium's net.fetch is failing on an otherwise-reachable host.
+ */
+function nodeFetch(remote, opts, redirectsLeft = 4) {
+  return new Promise((resolve, reject) => {
+    let url;
+    try { url = new URL(remote); } catch (e) { reject(e); return; }
+    const mod = url.protocol === 'http:' ? http : https;
+    const request = mod.request(url, { method: opts.method, headers: opts.headers }, (r) => {
+      const code = r.statusCode || 0;
+      if (code >= 300 && code < 400 && r.headers.location && redirectsLeft > 0) {
+        r.resume();      // drain and follow
+        const next = new URL(r.headers.location, url).href;
+        nodeFetch(next, opts, redirectsLeft - 1).then(resolve, reject);
+        return;
+      }
+      const outHeaders = {};
+      for (const h of PROXY_HEADERS) if (r.headers[h]) outHeaders[h] = r.headers[h];
+      const body = opts.method === 'HEAD' ? null : Readable.toWeb(r);
+      resolve(new Response(body, { status: code, headers: outHeaders }));
+    });
+    request.on('error', reject);
+    if (opts.signal) {
+      if (opts.signal.aborted) { request.destroy(); const e = new Error('aborted'); e.name = 'AbortError'; reject(e); return; }
+      opts.signal.addEventListener('abort', () => request.destroy(), { once: true });
+    }
+    request.end();
+  });
 }
 
 function handleProtocols() {
@@ -753,6 +847,32 @@ function handleProtocols() {
   });
 }
 
+// --------------------------------------------------------------- remote ----
+// Phones on the LAN open the remote page, run pose tracking on their own
+// camera and stream keypoints back. The control window owns the alignment and
+// turns them into interactors, so main only relays.
+function setupRemote() {
+  remote = new RemoteServer({
+    root: ROOT,
+    assets: path.join(ROOT, '..', 'assets'),
+    certDir: path.join(app.getPath('userData'), 'remote-cert'),
+    port: state.settings.remotePort || 9223,
+  });
+  remote.on('change', () => { state.remote = remote.info(); pushState(); });
+  remote.on('message', (id, msg) => {
+    if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg });
+  });
+  remote.on('open', (id, who) => {
+    if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg: { t: 'open', ...who } });
+  });
+  remote.on('close', (id) => {
+    if (control && !control.isDestroyed()) control.webContents.send('remote:msg', { id, msg: { t: 'close' } });
+  });
+  state.remote = remote.info();
+  setInterval(() => remote.sweep(), 1000);
+  if (state.settings.remoteEnabled) remote.start();
+}
+
 // ------------------------------------------------------------------- ipc ----
 const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'm2ts'];
 
@@ -783,6 +903,24 @@ function ipc() {
     toOutputs('fx:action', { layerId, name, arg });
     return true;
   });
+
+  ipcMain.handle('remote:start', async () => {
+    state.settings.remoteEnabled = true;
+    const port = state.settings.remotePort || 9223;
+    if (remote.running && remote.port !== port) remote.stop();
+    remote.port = port;
+    const info = await remote.start();
+    pushState();
+    return info;
+  });
+  ipcMain.handle('remote:stop', () => {
+    state.settings.remoteEnabled = false;
+    remote.stop();
+    pushState();
+    return true;
+  });
+  ipcMain.handle('remote:send', (e, id, msg) => remote.send(id, msg));
+  ipcMain.handle('remote:info', () => remote.info());
 
   ipcMain.handle('displays:get', () => serializeDisplays());
   ipcMain.handle('outputs:sync', () => { syncOutputs(); return true; });
@@ -1086,6 +1224,7 @@ app.whenReady().then(async () => {
 
   keepRegularApp();
   handleProtocols();
+  setupRemote();
   ipc();
   buildMenu();
 
@@ -1101,12 +1240,35 @@ app.whenReady().then(async () => {
 
   startShots();
   startEval();
+  if (devRemote) openDevRemote();
   // works even when an output window has focus
   try { globalShortcut.register('CommandOrControl+Alt+P', () => closeAllOutputs()); } catch {}
   screen.on('display-added', onDisplays);
   screen.on('display-removed', onDisplays);
   screen.on('display-metrics-changed', onDisplays);
 });
+
+// --dev-remote: the phone page in a phone-shaped window against this app's own
+// server, with Chromium's synthetic camera. The self-signed certificate is
+// accepted for that window only.
+let devRemoteWin = null;
+async function openDevRemote() {
+  await remote.start();
+  const url = 'https://127.0.0.1:' + remote.port + '/';
+  app.on('certificate-error', (e, wc, u, err, cert, cb) => {
+    // the page itself and its wss:// socket both come from this host
+    let host = ''; try { host = new URL(u).host; } catch {}
+    if (devRemoteWin && wc === devRemoteWin.webContents && host === '127.0.0.1:' + remote.port) { e.preventDefault(); cb(true); } else cb(false);
+  });
+  devRemoteWin = new BrowserWindow({
+    width: 390, height: 844, title: 'Phone (dev)', backgroundColor: '#000',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  devRemoteWin.webContents.session.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'));
+  devRemoteWin.webContents.on('console-message', (e, lvl, msg) => console.log('[phone console]', msg));
+  devRemoteWin.loadURL(url);
+  devRemoteWin.on('closed', () => { devRemoteWin = null; });
+}
 
 // --dev-shots=<dir>: periodically dump window contents so the UI can be
 // inspected without screen-recording permission.
@@ -1164,6 +1326,7 @@ function onDisplays() {
 
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => {
+  if (remote) remote.stop();
   if (psbId != null) powerSaveBlocker.stop(psbId);
   globalShortcut.unregisterAll();
 });

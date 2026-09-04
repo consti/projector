@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('api', {
   onFxInteract: on('fx:interact'),
   onFxAction: on('fx:action'),
 
+  remoteStart: () => ipcRenderer.invoke('remote:start'),
+  remoteStop: () => ipcRenderer.invoke('remote:stop'),
+  remoteSend: (id, msg) => ipcRenderer.invoke('remote:send', id, msg),
+  remoteInfo: () => ipcRenderer.invoke('remote:info'),
+  onRemoteMsg: on('remote:msg'),
+
   displays: () => ipcRenderer.invoke('displays:get'),
   setOutput: (role, cfg) => ipcRenderer.invoke('outputs:set', role, cfg),
   syncOutputs: () => ipcRenderer.invoke('outputs:sync'),
