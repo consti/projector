@@ -90,6 +90,7 @@ async function startCamera() {
     return false;
   }
   video.srcObject = st.stream;
+  document.body.classList.add('streaming');
   try { await video.play(); } catch {}
   const track = st.stream.getVideoTracks()[0];
   const s = track.getSettings ? track.getSettings() : {};
@@ -107,6 +108,7 @@ async function startCamera() {
 function stopCamera() {
   if (st.stream) st.stream.getTracks().forEach((t) => t.stop());
   st.stream = null; video.srcObject = null;
+  document.body.classList.remove('streaming');
 }
 async function flipCamera() {
   st.facing = st.facing === 'environment' ? 'user' : 'environment';
@@ -414,14 +416,27 @@ function ctl(op, extra = {}) { send({ t: 'ctl', op, ...extra }); }
 function setView(v) {
   st.view = v; prefs.set('view', v);
   const panel = v === 'control' || v === 'queue';
+  document.body.classList.remove('boot');
   document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
   for (const b of document.querySelectorAll('#viewSeg button')) b.classList.toggle('on', b.dataset.view === v);
-  $('#deck').hidden = v !== 'control';
-  $('#queue').hidden = v !== 'queue';
+  positionNavGlow();
+  const showP = (id, on) => { const p = $(id); if (on) { p.hidden = false; p.classList.remove('enter'); void p.offsetWidth; p.classList.add('enter'); } else p.hidden = true; };
+  showP('#deck', v === 'control');
+  showP('#queue', v === 'queue');
   if (v === 'control') { send({ t: 'deckSub' }); renderDeck(); }
   if (v === 'queue') { send({ t: 'deckSub' }); send({ t: 'ctl', op: 'libSub' }); renderQueue(); }
+  haptic(10);
   ui();
 }
+
+function positionNavGlow() {
+  const on = document.querySelector('#viewSeg button.on');
+  const glow = $('#navGlow');
+  if (!on || !glow) return;
+  glow.style.width = on.offsetWidth + 'px';
+  glow.style.transform = `translateX(${on.offsetLeft - 6}px)`;
+}
+function haptic(ms = 8) { try { navigator.vibrate && navigator.vibrate(ms); } catch {} }
 
 let deckShape = '';
 const refs = {};
@@ -447,6 +462,7 @@ function slider(label, min, max, step, get, onInput) {
   inp._get = get; inp._val = val; inp._fmt = onInput;
   const row = h('div', { class: 'dctl' }, [h('label', { text: label }), inp, val]);
   val.textContent = onInput(Number(inp.value));
+  fillRange(inp);
   return { row, inp };
 }
 
@@ -566,9 +582,9 @@ function updateDeck() {
   for (const L of d.fx.layers || []) {
     const r = refs.layers[L.id]; if (!r) continue;
     r.on.textContent = L.on ? '●' : '○';
-    if (r.op !== active) { r.op.value = L.opacity; r.op._val.textContent = Math.round(L.opacity * 100) + '%'; }
+    if (r.op !== active) { r.op.value = L.opacity; r.op._val.textContent = Math.round(L.opacity * 100) + '%'; fillRange(r.op); }
   }
-  const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); } };
+  const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); fillRange(inp); } };
   setS(refs.grav, d.fx.gravity); setS(refs.wind, d.fx.wind); setS(refs.time, d.fx.timeScale);
   if (refs.qsel && refs.qsel !== active) refs.qsel.value = d.fx.quality;
   // outputs + audio
@@ -695,7 +711,33 @@ $('#mirrorChk').onchange = (e) => { st.mirror = e.target.checked; prefs.set('mir
 $('#nameInp').onchange = (e) => { st.name = e.target.value.trim(); prefs.set('name', st.name); send({ t: 'hello', name: st.name || deviceName(), ua: navigator.userAgent }); };
 $('#modelSel').value = st.modelQ; $('#peopleSel').value = String(st.maxPoses);
 $('#skelChk').checked = st.skeleton; $('#mirrorChk').checked = st.mirror; $('#nameInp').value = st.name;
-window.addEventListener('resize', () => { st.lastVT = -1; });
+window.addEventListener('resize', () => { st.lastVT = -1; positionNavGlow(); });
+window.addEventListener('orientationchange', () => setTimeout(positionNavGlow, 250));
+
+// --- global polish: tap ripple + haptic, and gradient-fill on range sliders ---
+function fillRange(inp) {
+  const min = +inp.min || 0, max = +inp.max || 100;
+  const pct = max > min ? ((+inp.value - min) / (max - min)) * 100 : 50;
+  inp.style.setProperty('--fill', pct.toFixed(1) + '%');
+}
+document.addEventListener('input', (e) => { if (e.target && e.target.type === 'range') fillRange(e.target); }, true);
+document.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest && e.target.closest('button');
+  if (!b || b.disabled) return;
+  haptic(6);
+  const r = b.getBoundingClientRect();
+  const rip = document.createElement('span');
+  rip.className = 'ripple';
+  const d = Math.max(r.width, r.height) * 2.2;
+  rip.style.width = rip.style.height = d + 'px';
+  rip.style.left = (e.clientX - r.left) + 'px';
+  rip.style.top = (e.clientY - r.top) + 'px';
+  b.appendChild(rip);
+  setTimeout(() => rip.remove(), 600);
+}, { passive: true });
+
+// installable PWA (works offline enough to launch from the home screen)
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 fetch('/info.json', { cache: 'no-store' }).then((r) => r.json()).then((i) => { st.info = i; ui(); }).catch(() => {});
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -703,5 +745,7 @@ if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 }
 connect();
 setView(st.view);
+requestAnimationFrame(() => positionNavGlow());
+setTimeout(positionNavGlow, 300);
 ui();
 requestAnimationFrame(loop);

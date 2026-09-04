@@ -18,6 +18,16 @@ const { execFileSync } = require('child_process');
 const { EventEmitter } = require('events');
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+
+// A tiny network-first service worker so the remote installs to the home screen
+// and launches even before the LAN reconnects. It never caches the models/wasm.
+const SERVICE_WORKER = `const C='pj-shell-v1';
+const SHELL=['/','/remote/remote.css','/remote/remote.mjs','/shared/pose.mjs','/manifest.webmanifest'];
+self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(SHELL).catch(()=>{})))});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.map(k=>k!==C&&caches.delete(k)))).then(()=>self.clients.claim()))});
+self.addEventListener('fetch',e=>{const u=new URL(e.request.url);
+if(e.request.method!=='GET'||u.pathname==='/ws'||u.pathname.startsWith('/models')||u.pathname==='/info.json')return;
+e.respondWith(fetch(e.request).then(r=>{if(r&&r.ok&&u.origin===location.origin){const cl=r.clone();caches.open(C).then(c=>c.put(e.request,cl))}return r}).catch(()=>caches.match(e.request).then(m=>m||caches.match('/'))))});`;
 const MAX_FRAME = 256 * 1024;
 
 const MIME = {
@@ -154,6 +164,34 @@ class RemoteServer extends EventEmitter {
     if (rel === '/info.json') {
       res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
       res.end(JSON.stringify({ models: this.hasModels(), secure: this.secure }));
+      return;
+    }
+    // --- PWA: manifest, service worker, home-screen icons ---
+    if (rel === '/manifest.webmanifest') {
+      res.writeHead(200, { 'content-type': 'application/manifest+json', 'cache-control': 'no-cache' });
+      res.end(JSON.stringify({
+        name: 'Projector Remote', short_name: 'Projector', start_url: '/', scope: '/',
+        display: 'standalone', orientation: 'any', background_color: '#06070b', theme_color: '#07080c',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+        ],
+      }));
+      return;
+    }
+    if (rel === '/sw.js') {
+      res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', 'service-worker-allowed': '/' });
+      res.end(SERVICE_WORKER);
+      return;
+    }
+    if (/^\/icon(-\d+)?\.png$/.test(rel)) {
+      const icon = path.join(this.assets, '..', 'build', 'icon-1024.png');
+      fs.stat(icon, (err, st) => {
+        if (err) { res.writeHead(404); res.end('no icon'); return; }
+        res.writeHead(200, { 'content-type': 'image/png', 'content-length': st.size, 'cache-control': 'public, max-age=86400' });
+        if (req.method === 'HEAD') { res.end(); return; }
+        fs.createReadStream(icon).pipe(res);
+      });
       return;
     }
     let base;
