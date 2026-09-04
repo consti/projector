@@ -11,29 +11,52 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 button,select,input{font:inherit;color:inherit}
 
 #app{display:grid;height:100vh;
-  grid-template-columns:236px minmax(0,1fr) 318px;
+  grid-template-columns:64px minmax(0,1fr);
   grid-template-rows:38px 52px minmax(0,1fr);
-  grid-template-areas:"drag drag drag" "top top top" "left stage right";}
+  grid-template-areas:"drag drag" "top top" "rail main";}
 #drag{grid-area:drag;-webkit-app-region:drag;display:flex;align-items:center;justify-content:center;
   border-bottom:1px solid var(--line);background:var(--panel);gap:8px;font-size:12px;color:var(--dim)}
 #drag b{color:var(--fg);font-weight:600}
 
 #top{grid-area:top;display:flex;align-items:center;gap:10px;padding:0 12px;
   background:var(--panel);border-bottom:1px solid var(--line)}
-#left{grid-area:left;background:var(--panel);border-right:1px solid var(--line);
-  display:flex;flex-direction:column;min-height:0}
-#right{grid-area:right;background:var(--panel);border-left:1px solid var(--line);
-  overflow-y:scroll;overflow-x:hidden;min-height:0;overscroll-behavior:contain}
 
-/* macOS hides overlay scrollbars until you are already scrolling, which makes
-   a tall inspector look like it simply ends. Keep a thin one on screen. */
-#right::-webkit-scrollbar,#pl::-webkit-scrollbar{width:10px}
-#right::-webkit-scrollbar-track,#pl::-webkit-scrollbar-track{background:#111317}
-#right::-webkit-scrollbar-thumb,#pl::-webkit-scrollbar-thumb{
+/* --- left rail (view switcher) --- */
+#rail{grid-area:rail;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:3px}
+.railBtn{width:52px;height:50px;border:0;background:none;border-radius:11px;color:var(--dim);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:9.5px;font-weight:600;
+  transition:background .12s,color .12s}
+.railBtn svg{width:22px;height:22px}
+.railBtn:hover{background:var(--panel2);color:var(--fg)}
+.railBtn.on{background:var(--accent);color:#04121f}
+.railGap{flex:1}
+
+/* --- view host --- */
+#main{grid-area:main;position:relative;min-height:0;overflow:hidden;background:#0b0c0e}
+.view{position:absolute;inset:0;display:flex;min-height:0}
+.view[hidden]{display:none}
+.viewBody{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
+  padding:2px 0;background:var(--panel)}
+.dock{width:340px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+  overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;overscroll-behavior:contain}
+.dock.preview{width:400px}
+.previewHead{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim2);padding:9px 12px 5px;font-weight:600}
+
+/* the single mapping stage, moved between a big slot and small preview docks */
+.stageSlot{position:relative;background:#08090a}
+#vStage .stageSlot{flex:1;min-width:0}
+.dock .stageSlot{aspect-ratio:16/9;flex:none;margin:0 12px 10px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+#stage{position:absolute;inset:0;background:#08090a;overflow:hidden;min-height:0;display:flex;flex-direction:column}
+#stage.docked #tools{display:none}
+#stagePark{position:absolute;width:0;height:0;overflow:hidden}
+
+/* thin scrollbars on scroll surfaces */
+.viewBody::-webkit-scrollbar,.dock::-webkit-scrollbar,#pl::-webkit-scrollbar{width:10px}
+.viewBody::-webkit-scrollbar-track,.dock::-webkit-scrollbar-track,#pl::-webkit-scrollbar-track{background:#111317}
+.viewBody::-webkit-scrollbar-thumb,.dock::-webkit-scrollbar-thumb,#pl::-webkit-scrollbar-thumb{
   background:#333941;border-radius:6px;border:2px solid #111317}
-#right::-webkit-scrollbar-thumb:hover,#pl::-webkit-scrollbar-thumb:hover{background:#4a525d}
-#stage{grid-area:stage;position:relative;background:#08090a;overflow:hidden;min-height:0;
-  display:flex;flex-direction:column}
+.viewBody::-webkit-scrollbar-thumb:hover,.dock::-webkit-scrollbar-thumb:hover,#pl::-webkit-scrollbar-thumb:hover{background:#4a525d}
 
 /* --- generic bits --- */
 .btn{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);
@@ -88,6 +111,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 /* --- playlist --- */
 #plHead{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line)}
 #pl{overflow-y:auto;min-height:0;flex:0 1 auto}
+#plHost{display:flex;flex-direction:column;overflow:hidden}
 #plWrap{flex:1;min-height:0;display:flex;flex-direction:column}
 .pit{display:flex;gap:8px;align-items:center;padding:7px 9px;border-bottom:1px solid #1e2126;cursor:pointer}
 .pit:hover{background:#1b1e23}
@@ -103,7 +127,6 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .pit:hover .x{opacity:1}
 .pit .x:hover{color:var(--mask)}
 #plEmpty{padding:14px 12px;color:var(--dim2);font-size:11.5px;line-height:1.5}
-#cam{margin-top:auto}
 
 /* --- camera --- */
 #cam{border-top:1px solid var(--line);padding:8px;display:flex;flex-direction:column;gap:7px}
@@ -179,7 +202,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 #plDiscover.on{background:var(--ok);border-color:var(--ok);color:#052a12;font-weight:600}
 
 /* --- library overlay --- */
-#libraryView{position:fixed;inset:0;z-index:60;background:#0b0c0e;display:flex;flex-direction:column;
+#libraryView{position:absolute;inset:0;background:#0b0c0e;display:flex;flex-direction:column;
   padding:0;overflow:hidden}
 #libraryView[hidden]{display:none}
 .libBar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);

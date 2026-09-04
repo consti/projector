@@ -386,11 +386,12 @@ api.library().then((items) => libraryView.setItems(items));
 api.onLibrary((items) => { libraryView.setItems(items); remote.sendLibrary(items); });
 api.onLibraryProgress(({ id, progress }) => libraryView.setProgress(id, progress));
 api.onLibraryToast((m) => toast(m));
-$('#libBtn').onclick = () => libraryView.toggle();
-$('#libOpen').onclick = () => libraryView.show();
+for (const b of document.querySelectorAll('#rail .railBtn')) b.onclick = () => showView(b.dataset.view);
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && libraryView.open && !libraryView.editing) libraryView.hide();
+  if (e.key === 'Escape' && currentView === 'library' && libraryView.editing) return;   // editor handles its own Esc
 });
+// the Library "Close" button now goes back to the Playlist view
+libraryView.hooks.onClose = () => showView('playlist');
 
 function toggleDiscover() {
   const on = !(S && S.playlist && S.playlist.autoDiscover);
@@ -646,23 +647,51 @@ const round = (v, n) => Math.round(v * 10 ** n) / 10 ** n;
 const previewSource = () => (patternKind !== 'off' && patternCanvas ? patternCanvas : player.video);
 const sourceReady = (el) => !!el && !!(el.videoWidth || el.width);
 
+// The inspector is split across views: mapping (Map), effects (Effects),
+// outputs/setup (Setup). All sections are (re)built here so their live
+// updaters keep working regardless of which view is showing; only the stage
+// element moves and views hide via CSS.
 function buildInspector() {
   updaters.length = 0;
   frameUpdaters.length = 0;
-  const R = $('#right');
-  // The panel is rebuilt on every selection change; without this the operator
-  // is thrown back to the top each time they touch a layer.
-  const keepScroll = R.scrollTop;
-  R.innerHTML = '';
-  R.appendChild(outputSection());
-  R.appendChild(mappingSection());
-  R.appendChild(layersSection());
-  R.appendChild(selectionSection());
-  R.appendChild(fxSection());
-  R.appendChild(lookSection());
-  R.appendChild(presetSection());
-  R.appendChild(helpSection());
-  R.scrollTop = Math.min(keepScroll, Math.max(0, R.scrollHeight - R.clientHeight));
+  const hosts = { fx: $('#fxHost'), look: $('#lookHost'), mapInspector: $('#stageInspector'), out: $('#outHost') };
+  const scroll = {};
+  for (const k in hosts) if (hosts[k]) scroll[k] = hosts[k].scrollTop;
+
+  hosts.mapInspector.innerHTML = '';
+  hosts.mapInspector.appendChild(layersSection());
+  hosts.mapInspector.appendChild(selectionSection());
+
+  hosts.fx.innerHTML = '';
+  hosts.fx.appendChild(fxSection());
+
+  hosts.look.innerHTML = '';
+  hosts.look.appendChild(lookSection());
+
+  hosts.out.innerHTML = '';
+  hosts.out.appendChild(outputSection());
+  hosts.out.appendChild(mappingSection());
+  hosts.out.appendChild(presetSection());
+  hosts.out.appendChild(helpSection());
+
+  // restore scroll so touching a layer doesn't jump the panel to the top
+  for (const k in hosts) if (hosts[k]) hosts[k].scrollTop = Math.min(scroll[k] || 0, Math.max(0, hosts[k].scrollHeight - hosts[k].clientHeight));
+}
+
+// --- view switching + moving the single stage between views ---
+let currentView = 'stage';
+function showView(name) {
+  currentView = name;
+  for (const b of document.querySelectorAll('#rail .railBtn')) b.classList.toggle('on', b.dataset.view === name);
+  for (const v of document.querySelectorAll('#main .view')) v.hidden = v.id !== 'v' + name[0].toUpperCase() + name.slice(1);
+  const view = $('#v' + name[0].toUpperCase() + name.slice(1));
+  const stageEl = $('#stage');
+  const slot = view && view.querySelector('.stageSlot');
+  if (slot) { stageEl.classList.toggle('docked', name !== 'stage'); slot.appendChild(stageEl); }
+  else { stageEl.classList.add('docked'); $('#stagePark').appendChild(stageEl); }
+  if (name === 'library') libraryView.show(); else libraryView.hide();
+  // the stage changed size — relayout on the next frame
+  requestAnimationFrame(() => { stage.layout(); stage.draw && stage.draw(); });
 }
 
 function fxSection() {
@@ -1373,6 +1402,7 @@ function frame() {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+showView('stage');
 stage.layout();
 // Report the stage (#frame) rect so the app can send phones a cropped live
 // preview of the projection when no output window is open.

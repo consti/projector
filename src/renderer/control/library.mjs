@@ -62,7 +62,7 @@ export class LibraryView {
       this.search,
       el('button', { class: 'btn', text: 'Import', onclick: () => this._import() }),
       el('button', { class: 'btn', text: 'Export', onclick: () => api.libraryExport().then((p) => p && this.hooks.toast('Exported ' + p)) }),
-      el('button', { class: 'btn', text: 'Close', onclick: () => this.hide() }),
+      el('button', { class: 'btn', text: 'Close', onclick: () => (this.hooks.onClose ? this.hooks.onClose() : this.hide()) }),
     ]);
 
     const addRow = el('div', { class: 'libAddRow' }, [

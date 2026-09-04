@@ -24,107 +24,140 @@
     <input type="range" id="tVol" min="0" max="100" value="100" style="width:70px">
     <span id="nowTitle" class="hint"></span>
     <span class="grow"></span>
-    <button class="btn" id="libBtn" title="Music video library">Library</button>
     <button class="btn" id="oProj" title="Toggle projector output window">Projector</button>
     <button class="btn" id="oTv" title="Toggle TV output window">TV</button>
     <button class="btn danger" id="gBlack" title="Blackout (B)">Blackout</button>
   </div>
 
-  <div id="left">
-    <div id="plHead">
-      <button class="btn grow" id="addFiles">Add files</button>
-      <button class="btn grow" id="addUrl">Add URL</button>
-      <button class="btn icon" id="plClear" title="Clear playlist">&#10005;</button>
-    </div>
-    <div id="plInfo" class="hint"></div>
-    <div id="plTools">
-      <button class="btn sm" id="libOpen" title="Open the library">Library</button>
-      <button class="btn sm" id="plSave" title="Save this playlist">Save list</button>
-      <select id="plLoad" title="Load a saved playlist"><option value="">Playlists…</option></select>
-      <button class="btn sm" id="plDiscover" title="Keep discovering related videos and playing">Auto-discover</button>
-    </div>
-    <div id="plWrap">
-      <div id="plEmpty" class="hint">
-        Drop video files here, or add a YouTube video / playlist URL.<br><br>
-        Double-click an item to play it.
+  <nav id="rail">
+    <button class="railBtn" data-view="stage" title="Mapping">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="14" rx="1.5"/><path d="M3 9h18M9 4v14"/></svg>
+      <span>Map</span></button>
+    <button class="railBtn" data-view="effects" title="Effects">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 8h8M18 8h1M5 16h1M11 16h8"/><circle cx="15" cy="8" r="2.3" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.3" fill="currentColor" stroke="none"/></svg>
+      <span>Effects</span></button>
+    <button class="railBtn" data-view="playlist" title="Playlist">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.5" stroke-linecap="round"/><circle cx="17.2" cy="17.8" r="1.9" fill="currentColor" stroke="none"/><path d="M19 10l2.4-.8V7l-2.4.8z" fill="currentColor" stroke="none"/></svg>
+      <span>Playlist</span></button>
+    <button class="railBtn" data-view="library" title="Library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="7" height="14" rx="1"/><rect x="13" y="5" width="7" height="9" rx="1"/><path d="M13 17h7"/></svg>
+      <span>Library</span></button>
+    <span class="railGap"></span>
+    <button class="railBtn" data-view="output" title="Outputs &amp; setup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></svg>
+      <span>Setup</span></button>
+  </nav>
+
+  <div id="main">
+    <div id="stagePark" hidden></div>
+
+    <!-- the mapping stage; moved between views, big or docked -->
+    <div id="stage">
+      <div id="tools">
+        <div class="seg">
+          <button class="btn" data-tool="select" title="Select / move (V)">Select</button>
+          <button class="btn" data-tool="addSurface" title="Draw a new projection area (S)">+ Area</button>
+          <button class="btn" data-tool="maskRect" title="Blackout rectangle (M)">+ Mask</button>
+          <button class="btn" data-tool="maskPoly" title="Blackout polygon (P)">+ Shape</button>
+        </div>
+        <button class="btn" id="dupBtn" title="Duplicate (Cmd+D)">Duplicate</button>
+        <button class="btn danger" id="delBtn" title="Delete (Backspace)">Delete</button>
+        <span style="width:6px"></span>
+        <button class="btn" id="handlesBtn" title="Show handles">Handles</button>
+        <button class="btn" id="guidesBtn" title="Show outlines on the projector itself">Wall guides</button>
+        <select id="patSelect" title="Calibration pattern">
+          <option value="off">No test pattern</option>
+          <option value="grid">Grid</option>
+          <option value="corners">Corner markers</option>
+          <option value="bars">Colour bars</option>
+          <option value="circles">Circles</option>
+          <option value="checker">Checkerboard</option>
+          <option value="greyramp">Grey ramp</option>
+        </select>
+        <span class="grow"></span>
+        <button class="btn" id="fitBtn" title="Fit view">Fit</button>
+        <button class="btn" id="shotBtn" title="Capture what the projector is showing">Capture</button>
       </div>
-      <div id="pl"></div>
+      <div id="view">
+        <div id="frame">
+          <div id="camLayer"><video id="camWarp" muted playsinline></video></div>
+          <canvas id="glc"></canvas>
+          <canvas id="ovc"></canvas>
+        </div>
+        <div id="stageInfo"></div>
+        <div id="toast"></div>
+      </div>
     </div>
-    <div id="cam">
-      <div class="row"><span class="hint grow">Camera</span><span class="hint mono" id="camStatus">Off</span></div>
-      <select id="camSelect"><option value="">Select camera</option></select>
-      <div id="camView">
-        <video id="camVideo" muted playsinline></video>
-        <div id="camPick"><canvas id="camPickCanvas" style="width:100%;height:100%"></canvas></div>
-      </div>
-      <div class="row">
-        <button class="btn grow" id="camAlign">Align to wall</button>
-        <button class="btn" id="camShot" title="Save a still">Snap</button>
-        <button class="btn" id="camOff" title="Stop camera">&#9632;</button>
-      </div>
-      <div class="ctl"><label>Overlay</label>
-        <input type="range" id="camOpacity" min="0" max="100" value="50">
-        <span class="val" id="camOpacityV">50%</span></div>
-      <div class="hint" id="camHint">Use Continuity Camera: put your iPhone on a stand facing the wall,
-        then pick it above. "Align to wall" projects markers and asks you to click them.</div>
-    </div>
-    <div id="phone">
-      <div class="row"><span class="hint grow">Phone camera</span><span class="hint mono" id="phStatus">Off</span></div>
-      <div class="row nowrap">
-        <button class="btn grow" id="phToggle">Share on Wi-Fi</button>
-        <button class="btn" id="phAlign" title="Ask the phone to align its camera to the wall" disabled>Align</button>
-        <button class="btn icon" id="phClear" title="Forget the phone alignment" hidden>&#10005;</button>
-      </div>
-      <div id="phQrWrap" hidden>
-        <canvas id="phQr"></canvas>
-        <div class="grow">
-          <div class="mono" id="phUrl" title="Click to copy"></div>
-          <div class="hint" id="phClients"></div>
+
+    <!-- MAP view: big stage + mapping inspector -->
+    <section class="view" id="vStage">
+      <div class="stageSlot" data-slot></div>
+      <div class="dock" id="stageInspector"></div>
+    </section>
+
+    <!-- EFFECTS view: the big part -->
+    <section class="view" id="vEffects" hidden>
+      <div class="viewBody" id="fxHost"></div>
+      <div class="dock preview"><div class="previewHead">Live preview</div><div class="stageSlot" data-slot></div><div id="lookHost"></div></div>
+    </section>
+
+    <!-- PLAYLIST view -->
+    <section class="view" id="vPlaylist" hidden>
+      <div class="viewBody" id="plHost">
+        <div id="plHead">
+          <button class="btn grow" id="addFiles">Add files</button>
+          <button class="btn grow" id="addUrl">Add URL</button>
+          <button class="btn icon" id="plClear" title="Clear playlist">&#10005;</button>
+        </div>
+        <div id="plTools">
+          <button class="btn sm" id="plSave" title="Save this playlist">Save list</button>
+          <select id="plLoad" title="Load a saved playlist"><option value="">Playlists…</option></select>
+          <button class="btn sm" id="plDiscover" title="Keep discovering related videos and playing">Auto-discover</button>
+        </div>
+        <div id="plInfo" class="hint"></div>
+        <div id="plWrap">
+          <div id="plEmpty" class="hint">Drop video files here, or add a YouTube video / playlist URL.<br><br>Double-click an item to play it. Browse the <b>Library</b> to play downloaded videos.</div>
+          <div id="pl"></div>
         </div>
       </div>
-      <div class="hint" id="phHint"></div>
-    </div>
-  </div>
+      <div class="dock preview"><div class="previewHead">Live preview</div><div class="stageSlot" data-slot></div></div>
+    </section>
 
-  <div id="stage">
-    <div id="tools">
-      <div class="seg">
-        <button class="btn" data-tool="select" title="Select / move (V)">Select</button>
-        <button class="btn" data-tool="addSurface" title="Draw a new projection area (S)">+ Area</button>
-        <button class="btn" data-tool="maskRect" title="Blackout rectangle (M)">+ Mask</button>
-        <button class="btn" data-tool="maskPoly" title="Blackout polygon (P)">+ Shape</button>
-      </div>
-      <button class="btn" id="dupBtn" title="Duplicate (Cmd+D)">Duplicate</button>
-      <button class="btn danger" id="delBtn" title="Delete (Backspace)">Delete</button>
-      <span style="width:6px"></span>
-      <button class="btn" id="handlesBtn" title="Show handles">Handles</button>
-      <button class="btn" id="guidesBtn" title="Show outlines on the projector itself">Wall guides</button>
-      <select id="patSelect" title="Calibration pattern">
-        <option value="off">No test pattern</option>
-        <option value="grid">Grid</option>
-        <option value="corners">Corner markers</option>
-        <option value="bars">Colour bars</option>
-        <option value="circles">Circles</option>
-        <option value="checker">Checkerboard</option>
-        <option value="greyramp">Grey ramp</option>
-      </select>
-      <span class="grow"></span>
-      <button class="btn" id="fitBtn" title="Fit view">Fit</button>
-      <button class="btn" id="shotBtn" title="Capture what the projector is showing">Capture</button>
-    </div>
-    <div id="view">
-      <div id="frame">
-        <div id="camLayer"><video id="camWarp" muted playsinline></video></div>
-        <canvas id="glc"></canvas>
-        <canvas id="ovc"></canvas>
-      </div>
-      <div id="stageInfo"></div>
-      <div id="toast"></div>
-    </div>
-  </div>
+    <!-- LIBRARY view -->
+    <section class="view" id="vLibrary" hidden>
+      <div id="libraryView"></div>
+    </section>
 
-  <div id="right"></div>
-  <div id="libraryView" hidden></div>
+    <!-- SETUP view: outputs, wall setups, camera, phone -->
+    <section class="view" id="vOutput" hidden>
+      <div class="viewBody" id="outHost"></div>
+      <div class="dock" id="setupSide">
+        <div class="previewHead">Live preview</div><div class="stageSlot" data-slot></div>
+        <div id="cam">
+          <div class="row"><span class="hint grow">Continuity camera</span><span class="hint mono" id="camStatus">Off</span></div>
+          <select id="camSelect"><option value="">Select camera</option></select>
+          <div id="camView"><video id="camVideo" muted playsinline></video><div id="camPick"><canvas id="camPickCanvas" style="width:100%;height:100%"></canvas></div></div>
+          <div class="row">
+            <button class="btn grow" id="camAlign">Align to wall</button>
+            <button class="btn" id="camShot" title="Save a still">Snap</button>
+            <button class="btn" id="camOff" title="Stop camera">&#9632;</button>
+          </div>
+          <div class="ctl"><label>Overlay</label><input type="range" id="camOpacity" min="0" max="100" value="50"><span class="val" id="camOpacityV">50%</span></div>
+          <div class="hint" id="camHint">Put your iPhone on a stand facing the wall, pick it above, then "Align to wall".</div>
+        </div>
+        <div id="phone">
+          <div class="row"><span class="hint grow">Phone remote &amp; camera</span><span class="hint mono" id="phStatus">Off</span></div>
+          <div class="row nowrap">
+            <button class="btn grow" id="phToggle">Share on Wi-Fi</button>
+            <button class="btn" id="phAlign" title="Ask the phone to align its camera to the wall" disabled>Align</button>
+            <button class="btn icon" id="phClear" title="Forget the phone alignment" hidden>&#10005;</button>
+          </div>
+          <div id="phQrWrap" hidden><canvas id="phQr"></canvas><div class="grow"><div class="mono" id="phUrl" title="Click to copy"></div><div class="hint" id="phClients"></div></div></div>
+          <div class="hint" id="phHint"></div>
+        </div>
+      </div>
+    </section>
+  </div>
 </div>
 <script type="module" src="/renderer/control/control.mjs"></script>
 </body></html>
