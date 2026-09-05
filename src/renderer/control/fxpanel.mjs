@@ -2,7 +2,7 @@
 // parameter editor driven by each effect's own schema, so adding an effect
 // never means touching the UI.
 
-import { REGISTRY, QUALITY } from '/shared/fx/system.mjs';
+import { REGISTRY, QUALITY, PALETTE_MODES } from '/shared/fx/system.mjs';
 import { SOURCES } from '/shared/fx/audio.mjs';
 import { defaultFxLayer } from '/shared/schema.mjs';
 import { EFFECTS } from '/shared/fx/effects/index.mjs';
@@ -43,6 +43,32 @@ export const SCENES = [
   { name: 'Celebration', layers: [['confetti', {}], ['fireflies', { count: 30, palette: 'candy', multicolour: true }]] },
   { name: 'Emoji storm', layers: [['emoji', { rate: 8, count: 120 }]], note: 'Type your own emoji in the layer settings.' },
   { name: 'Building blocks', layers: [['shapes', { kind: 'box', rate: 6, count: 120, bounce: 0.1 }]] },
+
+  // --- trippy / retro ---------------------------------------------------
+  { name: 'Kaleidoscope', layers: [['kaleido', {}]] },
+  { name: 'Falling into itself', layers: [['droste', {}]], note: 'The picture repeats inside itself and spirals inwards forever.' },
+  { name: 'Infinity mirror', layers: [['feedback', {}]] },
+  { name: 'Circle limit', layers: [['hyperbolic', {}]], note: 'Escher’s hyperbolic tiling of the picture.' },
+  { name: 'Wormhole', layers: [['tunnel', { shape: 'round', twist: 1.2, hue: 0.4 }], ['fireflies', { count: 40, size: 0.01 }]] },
+  { name: 'Acid trip', layers: [['acid', {}], ['kaleido', { segments: 8, spin: 0.05, pulse: 0.6 }]], note: 'Melting colours, folded eight ways.' },
+  { name: 'Vaporwave', layers: [['synthwave', {}], ['vhs', { tracking: 0.3, jitter: 0.3, curve: 0.3, wear: 0.3, noise: 0.3, dropouts: 0.2 }]] },
+  { name: 'Bad tape', layers: [['vhs', { tracking: 1.2, jitter: 1.4, dropouts: 1.2 }]] },
+  { name: 'Datamosh', layers: [['glitch', { amount: 0.4, bursts: 1 }]] },
+  { name: 'Hall of mirrors', layers: [['mirror', { mode: 'both', swirl: 0.8 }]] },
+  { name: 'Into the room', layers: [['room', {}]], note: 'The wall opens into a box. Move the pointer to shift the view.' },
+  { name: 'Tetris', layers: [['tetris', {}]], note: 'Plays itself; your shapes are solid.' },
+  { name: 'Burn the film', layers: [['burn', {}], ['smoke', { emit: 0.25, density: 1.2, color: '#3a3a40' }]] },
+
+  // --- the shapes on the wall ----------------------------------------------
+  { name: 'Lamp on the wall', layers: [['shadows', {}]], note: 'Move the pointer: it is the lamp, and every shape casts a shadow.' },
+  { name: 'Blocks', layers: [['extrude', {}]], note: 'The shapes stand off the wall as solid blocks.' },
+  { name: 'Aura', layers: [['aura', {}]], note: 'Contour waves ripple out from every shape.' },
+  { name: 'Haunted gallery', layers: [['shadows', { dark: 0.9, lamp: 0.5, lampCol: '#9fb8ff', ambient: 0.35 }], ['aura', { rings: 10, ringCol: '#7a5cff', bulge: 0.2, grow: 0.5, glow: 0.3 }], ['fireflies', { count: 25, size: 0.008 }]] },
+  { name: 'Field lines', layers: [['fieldlines', {}]], note: 'Lines of force radiate from every shape.' },
+  { name: 'Glass rim', layers: [['glassrim', {}]], note: 'Every shape set behind a thick bevel of glass.' },
+  { name: 'Plasma', layers: [['plasma', {}], ['neon', { glow: 0.5, dim: 0, picEdges: 0, double: 0, width: 0.002 }]] },
+  { name: 'Frost', layers: [['frost', {}]], note: 'Ice creeps out of every shape, then melts back.' },
+  { name: 'Contour map', layers: [['contour', {}]] },
 
   // --- audio reactive -------------------------------------------------
   {
@@ -86,6 +112,22 @@ export const SCENES = [
     ] }]],
   },
   {
+    name: 'Glitch on the beat', note: 'The picture tears on every beat and mends between them.',
+    audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.5, exposure: 0, wind: 0 }, globalSrc: 'level' },
+    layers: [['glitch', { amount: 0.05, bursts: 0 }, {
+      trig: { src: 'beat', action: 'burst', every: 1 },
+      mod: [{ p: 'split', src: 'high', amt: 1.5 }],
+    }]],
+  },
+  {
+    name: 'Shockwave on the beat', note: 'A ring bursts out of every shape on each beat.',
+    audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.8, exposure: 0, wind: 0 }, globalSrc: 'level' },
+    layers: [['shockwave', { every: 0, speed: 0.4 }, {
+      trig: { src: 'beat', action: 'pulse', every: 1 },
+      mod: [{ p: 'amp', src: 'bass', amt: 0.6 }],
+    }]],
+  },
+  {
     name: 'Shatter on the drop', note: 'The picture breaks every eighth beat and rebuilds itself.',
     audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.5, exposure: 0, wind: 0 }, globalSrc: 'level' },
     layers: [['shatter', { pieces: 90, burst: 0.8, reveal: 0.15 }, {
@@ -95,7 +137,7 @@ export const SCENES = [
   },
 ];
 
-const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth'];
+const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'Trippy', 'Retro', 'Look'];
 
 export function buildFxSection(ui) {
   const P = ui.project();
@@ -108,6 +150,7 @@ export function buildFxSection(ui) {
     ui.toggle('Effects on', () => fx.enabled, (v) => { fx.enabled = v; }),
     ui.toggle('In preview', () => fx.preview !== false, (v) => { fx.preview = v; }),
   ]));
+  rows.push(el('div', { class: 'hint', text: 'The stack runs on both walls: the projector (with your shapes) and the TV (plain video, no shapes). Each layer below can be limited to one of them.' }));
   if (!fx.enabled) {
     rows.push(el('div', { class: 'hint', text: 'Physics and simulation layers drawn over the mapped video, in projector space. Everything collides with the shapes you have masked.' }));
   }
@@ -118,15 +161,21 @@ export function buildFxSection(ui) {
   // ---------------------------------------------------------- layer stack
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px' });
   const layers = fx.layers || (fx.layers = []);
-  if (!layers.length) list.appendChild(el('div', { class: 'hint', text: 'No effects yet — add one below, or pick a scene.' }));
+  if (!layers.length) list.appendChild(el('div', { class: 'hint', text: 'No effects yet. Pick one from the catalogue, or start from a scene.' }));
   layers.forEach((L, i) => {
     const spec = REGISTRY.get(L.type);
     const on = ui.selectedLayer() === L.id;
+    const chk = el('input', { type: 'checkbox', title: 'Show / hide' });
+    chk.checked = L.enabled !== false;
+    chk.onclick = (e) => e.stopPropagation();
+    chk.onchange = () => { L.enabled = chk.checked; ui.push(true); ui.rebuild(); };
+    const sh = L.show || {};
+    const wallTag = sh.projector === false && sh.tv === false ? 'off' : sh.tv === false ? 'projector' : sh.projector === false ? 'TV' : '';
     const row = el('div', { class: 'lay' + (on ? ' on' : '') + (L.enabled === false ? '' : ' vis') }, [
-      el('span', { class: 'eye', text: L.enabled === false ? '○' : '●',
-        title: 'Show / hide',
-        onclick: (e) => { e.stopPropagation(); L.enabled = L.enabled === false; ui.push(true); ui.rebuild(); } }),
+      chk,
+      el('img', { class: 'th', src: thumbUrl(L.type), alt: '' }),
       el('span', { class: 'nm', text: L.name || (spec ? spec.label : L.type) }),
+      wallTag ? el('span', { class: 'tag', text: wallTag, title: 'Shows on this wall only' }) : null,
       el('span', { class: 'ar', text: '▲', title: 'Move up',
         onclick: (e) => { e.stopPropagation(); if (i > 0) { layers.splice(i - 1, 0, layers.splice(i, 1)[0]); ui.push(true); ui.rebuild(); } } }),
       el('span', { class: 'ar', text: '▼', title: 'Move down',
@@ -138,37 +187,6 @@ export function buildFxSection(ui) {
     list.appendChild(row);
   });
   rows.push(list);
-
-  // add menu
-  const addSel = el('select', {});
-  addSel.appendChild(el('option', { value: '', text: '+ Add an effect…' }));
-  const byGroup = new Map();
-  for (const e of EFFECTS) {
-    const g = e.group || 'Other';
-    if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g).push(e);
-  }
-  const groups = [...byGroup.keys()].sort((a, b) => {
-    const ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-  });
-  for (const g of groups) {
-    const og = el('optgroup', { label: g });
-    for (const e of byGroup.get(g)) og.appendChild(el('option', { value: e.type, text: e.label }));
-    addSel.appendChild(og);
-  }
-  addSel.onchange = () => {
-    const t = addSel.value;
-    addSel.value = '';
-    if (!t) return;
-    const L = defaultFxLayer(t);
-    layers.push(L);
-    fx.enabled = true;
-    ui.selectLayer(L.id);
-    ui.push(true);
-    ui.rebuild();
-  };
-  rows.push(el('div', { class: 'row nowrap' }, [addSel]));
 
   // ---------------------------------------------------- selected layer
   const sel = layers.find((L) => L.id === ui.selectedLayer());
@@ -185,6 +203,33 @@ export function buildFxSection(ui) {
       }
       rows.push(ui.slider('Opacity', () => (sel.opacity == null ? 1 : sel.opacity),
         (v) => (sel.opacity = v), { min: 0, max: 1, fmt: (v) => Math.round(v * 100) + '%' }));
+      // which walls carry this layer
+      const show = sel.show || (sel.show = { projector: true, tv: true });
+      rows.push(el('div', { class: 'row' }, [
+        el('span', { class: 'hint', text: 'Show on' }),
+        ui.toggle('Projector', () => show.projector !== false, (v) => { show.projector = v; }),
+        ui.toggle('TV', () => show.tv !== false, (v) => { show.tv = v; }),
+      ]));
+      // colours from the picture instead of the swatches
+      if ((spec.params || []).some((q) => q.type === 'color')) {
+        rows.push(ui.selectRow('Colours', PALETTE_MODES, () => sel.palette || 'fixed', (v) => { sel.palette = v; ui.push(true); ui.rebuild(); }));
+      }
+      // which shapes this layer sees
+      const seen = (P.masks || []).filter((m) => m.enabled && m.fxCollide !== false);
+      if (seen.length) {
+        const all = !Array.isArray(sel.shapes);
+        const list = el('div', { class: 'row' }, [
+          el('span', { class: 'hint', text: 'Shapes' }),
+          ui.toggle('All', () => !Array.isArray(sel.shapes), (v) => { sel.shapes = v ? null : seen.map((m) => m.id); ui.rebuild(); }),
+          ...seen.map((m) => ui.toggle(m.name || 'Mask', () => all || sel.shapes.includes(m.id), (v) => {
+            const cur = new Set(Array.isArray(sel.shapes) ? sel.shapes : seen.map((x) => x.id));
+            if (v) cur.add(m.id); else cur.delete(m.id);
+            sel.shapes = cur.size === seen.length ? null : [...cur];
+            ui.rebuild();
+          })),
+        ]);
+        rows.push(list);
+      }
       const get = (k, d) => (sel.params && sel.params[k] != null ? sel.params[k] : d);
       const set = (k, v) => { (sel.params || (sel.params = {}))[k] = v; };
       for (const spc of spec.params || []) {
@@ -193,45 +238,65 @@ export function buildFxSection(ui) {
       rows.push(...soundLinks(ui, fx, sel, spec));
       rows.push(el('button', {
         class: 'btn sm', text: 'Reset this effect',
-        onclick: () => { sel.params = {}; sel.mod = []; sel.trig = null; ui.push(true); ui.rebuild(); },
+        onclick: () => { sel.params = {}; sel.mod = []; sel.trig = null; sel.palette = 'fixed'; sel.shapes = null; ui.push(true); ui.rebuild(); },
       }));
     }
   }
 
-  // ------------------------------------------------------------- world
-  rows.push(el('div', { class: 'fxhead', text: 'World' }));
-  rows.push(ui.slider('Gravity', () => fx.gravity, (v) => (fx.gravity = v), { min: -2, max: 4, fmt: (v) => v.toFixed(2) }));
-  rows.push(ui.slider('Wind', () => fx.windX, (v) => (fx.windX = v), { min: -2, max: 2, fmt: (v) => v.toFixed(2) }));
-  rows.push(ui.slider('Time scale', () => fx.timeScale, (v) => (fx.timeScale = v), { min: 0, max: 3, fmt: (v) => v.toFixed(2) + 'x' }));
   rows.push(el('div', { class: 'row' }, [
+    el('button', { class: 'btn sm grow', text: 'Clear all layers', onclick: () => { fx.layers = []; ui.selectLayer(null); ui.push(true); ui.rebuild(); } }),
+  ]));
+
+  const stats = el('div', { class: 'hint mono' });
+  ui.live(() => {
+    const s = ui.stats();
+    stats.textContent = s
+      ? `${s.layers} layer${s.layers === 1 ? '' : 's'} · sim ${s.ms.toFixed(1)} ms/frame` + (s.error ? ' · ' + s.error : '')
+      : (fx.enabled ? 'idle' : '');
+    stats.style.color = s && s.error ? 'var(--mask)' : '';
+  });
+  rows.push(stats);
+
+  return ui.section('Effects', rows);
+}
+
+
+// World, camera, look and sound: the right-hand dock under the preview.
+export function buildFxWorldSections(ui) {
+  const P = ui.project();
+  const fx = P.fx;
+  const el = ui.el;
+  const world = [], cam = [], look = [];
+  world.push(ui.slider('Gravity', () => fx.gravity, (v) => (fx.gravity = v), { min: -2, max: 4, fmt: (v) => v.toFixed(2) }));
+  world.push(ui.slider('Wind', () => fx.windX, (v) => (fx.windX = v), { min: -2, max: 2, fmt: (v) => v.toFixed(2) }));
+  world.push(ui.slider('Time scale', () => fx.timeScale, (v) => (fx.timeScale = v), { min: 0, max: 3, fmt: (v) => v.toFixed(2) + 'x' }));
+  world.push(el('div', { class: 'row' }, [
     ui.toggle('Masks are solid', () => fx.collideMasks !== false, (v) => (fx.collideMasks = v)),
     ui.toggle('Area edges solid', () => !!fx.collideSurfaceEdges, (v) => (fx.collideSurfaceEdges = v)),
   ]));
   const walls = fx.walls || (fx.walls = { l: true, r: true, t: false, b: true });
-  rows.push(el('div', { class: 'row' }, [
+  world.push(el('div', { class: 'row' }, [
     el('span', { class: 'hint', text: 'Walls' }),
     ui.toggle('Floor', () => walls.b, (v) => (walls.b = v)),
     ui.toggle('Ceiling', () => walls.t, (v) => (walls.t = v)),
     ui.toggle('Sides', () => walls.l && walls.r, (v) => { walls.l = v; walls.r = v; }),
   ]));
-  rows.push(el('div', { class: 'row' }, [
+  world.push(el('div', { class: 'row' }, [
     ui.toggle('Pointer interacts', () => fx.interact.pointer !== false, (v) => (fx.interact.pointer = v)),
     ui.toggle('Pause with video', () => !!fx.pauseWithVideo, (v) => (fx.pauseWithVideo = v)),
   ]));
-  rows.push(ui.slider('Pointer reach', () => fx.interact.radius, (v) => (fx.interact.radius = v), { min: 0.01, max: 0.4, fmt: (v) => v.toFixed(2) }));
+  world.push(ui.slider('Pointer reach', () => fx.interact.radius, (v) => (fx.interact.radius = v), { min: 0.01, max: 0.4, fmt: (v) => v.toFixed(2) }));
 
-  // ------------------------------------------------------------ camera
-  rows.push(el('div', { class: 'fxhead', text: 'Camera interaction' }));
-  const ready = ui.cameraReady();
-  rows.push(el('div', { class: 'row' }, [
+  // camera
+  cam.push(el('div', { class: 'row' }, [
     ui.toggle('People push things', () => !!fx.interact.camera, (v) => (fx.interact.camera = v)),
     ui.toggle('Show tracking', () => !!fx.interact.cameraDebug, (v) => (fx.interact.cameraDebug = v)),
   ]));
-  rows.push(ui.slider('Sensitivity', () => fx.interact.cameraSensitivity,
+  cam.push(ui.slider('Sensitivity', () => fx.interact.cameraSensitivity,
     (v) => (fx.interact.cameraSensitivity = v), { min: 0.2, max: 4, fmt: (v) => v.toFixed(2) }));
-  rows.push(ui.slider('Push strength', () => fx.interact.cameraForce,
+  cam.push(ui.slider('Push strength', () => fx.interact.cameraForce,
     (v) => (fx.interact.cameraForce = v), { min: 0, max: 4, fmt: (v) => v.toFixed(2) }));
-  rows.push(ui.selectRow('Phone pushes with', PART_OPTIONS, () => fx.interact.phoneParts || 'body',
+  cam.push(ui.selectRow('Phone pushes with', PART_OPTIONS, () => fx.interact.phoneParts || 'body',
     (v) => { fx.interact.phoneParts = v; ui.push(true); }));
   const camState = el('div', { class: 'hint' });
   ui.live(() => {
@@ -251,47 +316,21 @@ export function buildFxSection(ui) {
     camState.textContent = txt;
     camState.style.color = r || ph.ready ? '' : 'var(--dim2)';
   });
-  rows.push(camState);
+  cam.push(camState);
 
-  rows.push(el('div', { class: 'fxhead', text: 'Look' }));
-  rows.push(ui.slider('Bloom', () => fx.bloom, (v) => (fx.bloom = v), { min: 0, max: 2 }));
-  rows.push(ui.slider('Bloom threshold', () => fx.bloomThreshold, (v) => (fx.bloomThreshold = v), { min: 0.2, max: 2 }));
-  rows.push(ui.slider('Exposure', () => fx.exposure, (v) => (fx.exposure = v), { min: 0.2, max: 3 }));
-  rows.push(ui.toggle('Filmic tonemap', () => fx.tonemap !== false, (v) => (fx.tonemap = v)));
+  // look
+  look.push(ui.slider('Bloom', () => fx.bloom, (v) => (fx.bloom = v), { min: 0, max: 2 }));
+  look.push(ui.slider('Bloom threshold', () => fx.bloomThreshold, (v) => (fx.bloomThreshold = v), { min: 0.2, max: 2 }));
+  look.push(ui.slider('Exposure', () => fx.exposure, (v) => (fx.exposure = v), { min: 0.2, max: 3 }));
+  look.push(ui.toggle('Filmic tonemap', () => fx.tonemap !== false, (v) => (fx.tonemap = v)));
 
-  rows.push(...soundSection(ui, fx));
 
-  // ----------------------------------------------------------- scenes
-  rows.push(el('div', { class: 'fxhead', text: 'Scenes' }));
-  const grid = el('div', { class: 'quad' });
-  for (const s of SCENES) {
-    grid.appendChild(el('button', {
-      class: 'btn sm', text: s.name, title: s.note || '',
-      onclick: () => {
-        const first = applyScene(fx, s);
-        ui.selectLayer(first);
-        ui.push(true);
-        ui.rebuild();
-        ui.toast(s.note || s.name);
-      },
-    }));
-  }
-  rows.push(grid);
-  rows.push(el('div', { class: 'row' }, [
-    el('button', { class: 'btn sm grow', text: 'Clear all layers', onclick: () => { fx.layers = []; ui.selectLayer(null); ui.push(true); ui.rebuild(); } }),
-  ]));
-
-  const stats = el('div', { class: 'hint mono' });
-  ui.live(() => {
-    const s = ui.stats();
-    stats.textContent = s
-      ? `${s.layers} layer${s.layers === 1 ? '' : 's'} · sim ${s.ms.toFixed(1)} ms/frame` + (s.error ? ' · ' + s.error : '')
-      : (fx.enabled ? 'idle' : '');
-    stats.style.color = s && s.error ? 'var(--mask)' : '';
-  });
-  rows.push(stats);
-
-  return ui.section('Effects', rows);
+  return [
+    ui.section('World', world),
+    ui.section('Camera interaction', cam),
+    ui.section('Effects look', look),
+    ui.section('Sound', soundSection(ui, fx)),
+  ];
 }
 
 function paramControl(ui, spc, get, set) {
@@ -419,3 +458,154 @@ function soundLinks(ui, fx, sel, spec) {
   ]));
   return rows;
 }
+
+
+// ------------------------------------------------------------ catalogue ----
+// The middle of the Effects view: every effect as a card with a captured
+// thumbnail, searchable and filtered by group, with the scenes along the top.
+// Built once; only the "in the stack" badges refresh on later rebuilds.
+
+export const thumbUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.jpg';
+
+const browserState = { q: '', group: '', el: null, refresh: null };
+
+export function buildFxBrowser(ui) {
+  if (browserState.el) { browserState.refresh(); return browserState.el; }
+  const el = ui.el;
+  const root = el('div', { class: 'fxBrowse' });
+
+  // tools
+  const search = el('input', { type: 'text', placeholder: 'Search effects…', class: 'fxSearch', value: browserState.q });
+  const chips = el('div', { class: 'fxChips' });
+  const byGroup = new Map();
+  for (const e of EFFECTS) { const g = e.group || 'Other'; if (!byGroup.has(g)) byGroup.set(g, []); byGroup.get(g).push(e); }
+  const groups = [...byGroup.keys()].sort((a, b) => {
+    const ia = GROUP_ORDER.indexOf(a), ib = GROUP_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  const chip = (label, value) => el('button', {
+    class: 'chip' + (browserState.group === value ? ' on' : ''), text: label,
+    onclick: () => { browserState.group = value; render(); },
+  });
+  root.appendChild(el('div', { class: 'fxTools' }, [search, chips]));
+
+  const body = el('div', { class: 'fxBody' });
+  root.appendChild(body);
+
+  const inStack = (type) => (ui.project().fx.layers || []).filter((L) => L.type === type).length;
+
+  const addLayer = (type) => {
+    const fx = ui.project().fx;
+    const L = defaultFxLayer(type);
+    (fx.layers || (fx.layers = [])).push(L);
+    fx.enabled = true;
+    ui.selectLayer(L.id);
+    ui.push(true);
+    ui.rebuild();
+    ui.toast('Added ' + (REGISTRY.get(type)?.label || type));
+  };
+
+  const card = (e) => {
+    const n = inStack(e.type);
+    const badge = el('span', { class: 'fxBadge' + (n ? ' on' : ''), text: n ? (n === 1 ? 'in the stack' : n + ' in the stack') : '' });
+    const img = el('img', { src: thumbUrl(e.type), alt: '', loading: 'lazy' });
+    img.onerror = () => { img.replaceWith(el('div', { class: 'fxNoThumb', text: e.label[0] })); };
+    const c = el('button', { class: 'fxCard', title: 'Add ' + e.label, 'data-type': e.type }, [
+      el('div', { class: 'fxThumb' }, [img, badge, el('span', { class: 'fxAdd', text: '+' })]),
+      el('div', { class: 'fxCardBody' }, [
+        el('div', { class: 'fxCardName', text: e.label }),
+        el('div', { class: 'fxCardHint', text: e.hint || '' }),
+      ]),
+    ]);
+    c.onclick = () => addLayer(e.type);
+    return c;
+  };
+
+  const sceneCard = (s) => {
+    const first = s.layers[0] && s.layers[0][0];
+    const img = el('img', { src: thumbUrl(first), alt: '', loading: 'lazy' });
+    img.onerror = () => { img.replaceWith(el('div', { class: 'fxNoThumb', text: s.name[0] })); };
+    const tags = el('div', { class: 'fxTags' }, s.layers.map(([t]) => el('span', { class: 'tag', text: REGISTRY.get(t)?.label || t })));
+    const c = el('button', { class: 'fxCard scene', title: s.note || s.name }, [
+      el('div', { class: 'fxThumb' }, [img, s.audio ? el('span', { class: 'fxBadge on', text: '♪ reacts to sound' }) : null]),
+      el('div', { class: 'fxCardBody' }, [
+        el('div', { class: 'fxCardName', text: s.name }),
+        tags,
+      ]),
+    ]);
+    c.onclick = () => {
+      const fx = ui.project().fx;
+      const firstId = applyScene(fx, s);
+      ui.selectLayer(firstId);
+      ui.push(true);
+      ui.rebuild();
+      ui.toast(s.note || s.name);
+    };
+    return c;
+  };
+
+  function render() {
+    chips.innerHTML = '';
+    chips.appendChild(chip('All', ''));
+    chips.appendChild(chip('Scenes', 'scenes'));
+    for (const g of groups) chips.appendChild(chip(g, g));
+
+    body.innerHTML = '';
+    const q = browserState.q.trim().toLowerCase();
+    const match = (e) => !q || (e.label + ' ' + e.type + ' ' + (e.hint || '') + ' ' + (e.group || '')).toLowerCase().includes(q);
+
+    if (!browserState.group || browserState.group === 'scenes') {
+      const list = SCENES.filter((s) => !q || (s.name + ' ' + (s.note || '') + ' ' + s.layers.map((l) => l[0]).join(' ')).toLowerCase().includes(q));
+      if (list.length) {
+        body.appendChild(el('div', { class: 'fxGroupHead' }, [
+          el('h2', { text: 'Scenes' }),
+          el('span', { class: 'hint', text: 'Ready-made stacks. Applying one replaces the current layers.' }),
+        ]));
+        body.appendChild(el('div', { class: 'fxGrid scenes' }, list.map(sceneCard)));
+      }
+    }
+    if (browserState.group !== 'scenes') {
+      for (const g of groups) {
+        if (browserState.group && browserState.group !== g) continue;
+        const list = byGroup.get(g).filter(match);
+        if (!list.length) continue;
+        body.appendChild(el('div', { class: 'fxGroupHead' }, [
+          el('h2', { text: g }),
+          el('span', { class: 'hint', text: GROUP_BLURB[g] || '' }),
+          el('span', { class: 'count', text: list.length + (list.length === 1 ? ' effect' : ' effects') }),
+        ]));
+        body.appendChild(el('div', { class: 'fxGrid' }, list.map(card)));
+      }
+    }
+    if (!body.children.length) body.appendChild(el('div', { class: 'hint fxEmpty', text: 'Nothing matches “' + browserState.q + '”.' }));
+  }
+
+  search.oninput = () => { browserState.q = search.value; render(); };
+  search.onkeydown = (e) => { if (e.key === 'Escape') { search.value = ''; browserState.q = ''; render(); } e.stopPropagation(); };
+  render();
+
+  browserState.el = root;
+  browserState.refresh = () => {
+    for (const c of root.querySelectorAll('.fxCard[data-type]')) {
+      const n = inStack(c.dataset.type);
+      const b = c.querySelector('.fxBadge');
+      b.textContent = n ? (n === 1 ? 'in the stack' : n + ' in the stack') : '';
+      b.classList.toggle('on', n > 0);
+    }
+  };
+  return root;
+}
+
+const GROUP_BLURB = {
+  Fluid: 'Gas solvers over the picture: smoke, fire and ink that roll around your shapes.',
+  Water: 'Liquids and waves that refract the picture.',
+  Physics: 'Rigid bodies, sand and a self-playing game that stack on your shapes.',
+  Weather: 'Snow and rain that collide and settle.',
+  Particles: 'Confetti and a flock that steers around the shapes.',
+  Energy: 'Lightning, aurora, gravity and fire that burns the picture away.',
+  Growth: 'Vines that grow into the open wall between your shapes.',
+  Shapes: 'These act on the shapes you masked: shadows, blocks, lights and neon. Each mask has an “Effects see this shape” toggle.',
+  Trippy: 'The picture folded, tiled, mirrored and fed back into itself.',
+  Retro: 'Synthwave horizons, worn tape and digital tears.',
+  Look: 'Image treatments: print, text, 8-bit, paint, thermal, glass.',
+};

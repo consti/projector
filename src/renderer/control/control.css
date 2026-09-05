@@ -313,3 +313,75 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .libFilterSel{background:#101214;border:1px solid var(--line);border-radius:7px;padding:5px 8px;color:var(--fg);
   font-size:12px;max-width:220px}
 .libFilterRow .hint{margin-left:4px}
+
+/* --- effects view: stack | catalogue | preview --- */
+.dock.left{border-left:0;border-right:1px solid var(--line)}
+.lay .th{width:28px;height:16px;object-fit:cover;border-radius:3px;background:#000;flex:none;opacity:.9}
+.lay.on .th{outline:1px solid var(--accent2)}
+.fxBrowse{display:flex;flex-direction:column;min-height:100%;background:var(--bg)}
+.fxTools{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;padding:10px 16px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.fxSearch{width:220px;background:#101214;border:1px solid var(--line);border-radius:7px;padding:6px 10px;font-size:12.5px}
+.fxSearch:focus{outline:none;border-color:var(--accent)}
+.fxChips{display:flex;gap:5px;flex-wrap:wrap}
+.chip{background:#191c21;border:1px solid var(--line);border-radius:12px;padding:3px 10px;font-size:11.5px;cursor:pointer;color:var(--dim)}
+.chip:hover{color:var(--fg);border-color:#3a4048}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#031425;font-weight:600}
+.fxBody{padding:6px 16px 40px}
+.fxGroupHead{display:flex;align-items:baseline;gap:12px;margin:22px 0 10px}
+.fxGroupHead h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em}
+.fxGroupHead .hint{flex:1;min-width:0}
+.fxGroupHead .count{font-size:10.5px;color:var(--dim2);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.fxGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
+.fxGrid.scenes{grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+.fxCard{display:flex;flex-direction:column;text-align:left;padding:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:9px;overflow:hidden;cursor:pointer;color:var(--fg);transition:border-color .12s,transform .12s}
+.fxCard:hover{border-color:var(--accent);transform:translateY(-1px)}
+.fxCard:focus-visible{outline:2px solid var(--accent)}
+.fxThumb{position:relative;width:100%;aspect-ratio:16/9;background:#000;overflow:hidden}
+.fxThumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s}
+.fxCard:hover .fxThumb img{transform:scale(1.04)}
+.fxNoThumb{width:100%;height:100%;display:grid;place-items:center;font-size:34px;font-weight:700;color:#2a2f37;
+  background:linear-gradient(135deg,#14171c,#0b0c0e)}
+.fxAdd{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#031425;
+  display:grid;place-items:center;font-size:18px;font-weight:700;opacity:0;transition:opacity .12s;line-height:1}
+.fxCard:hover .fxAdd{opacity:1}
+.fxBadge{position:absolute;left:8px;top:8px;font-size:10px;padding:2px 6px;border-radius:4px;background:#000b;color:#fff;display:none;letter-spacing:.02em}
+.fxBadge.on{display:block;background:var(--accent2);color:#03202a;font-weight:600}
+.fxCardBody{padding:8px 10px 10px;display:flex;flex-direction:column;gap:3px}
+.fxCardName{font-size:12.5px;font-weight:600}
+.fxCardHint{font-size:11px;color:var(--dim);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fxTags{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
+.fxTags .tag{font-size:9.5px}
+.fxEmpty{padding:40px;text-align:center;font-size:13px}
+
+/* --- switches: a boolean is a switch, not a button that happens to be lit --- */
+.tog{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--fg);user-select:none;
+  padding:3px 2px;min-width:0;position:relative;white-space:nowrap}
+.tog input{position:absolute;opacity:0;width:0;height:0;margin:0;pointer-events:none}
+.tog .sw{width:28px;height:16px;border-radius:9px;background:#2a2f37;border:1px solid var(--line);position:relative;flex:none;
+  transition:background .15s,border-color .15s}
+.tog .sw::after{content:'';position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:var(--dim);
+  transition:transform .15s,background .15s}
+.tog:hover .sw{border-color:#3a4048}
+.tog input:checked+.sw{background:var(--accent);border-color:var(--accent)}
+.tog input:checked+.sw::after{transform:translateX(12px);background:#fff}
+.tog input:focus-visible+.sw{outline:2px solid var(--accent);outline-offset:1px}
+.tog.danger input:checked+.sw{background:var(--mask);border-color:var(--mask)}
+.tog .tl{overflow:hidden;text-overflow:ellipsis}
+.tog.grow{flex:1}
+#top .tog,#tools .tog{padding:3px 4px}
+.lay input[type=checkbox]{margin:0 2px 0 0;width:13px;height:13px;flex:none;cursor:pointer}
+
+/* --- preview head with the wall selector --- */
+.previewHead{display:flex;align-items:center;gap:8px}
+.wallSeg{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.wallSeg button{border:0;background:none;color:var(--dim);font-size:10px;font-weight:600;padding:2px 9px;cursor:pointer;
+  text-transform:none;letter-spacing:0}
+.wallSeg button:hover{color:var(--fg)}
+.wallSeg button.on{background:var(--accent);color:#031425}
+
+/* --- the docked preview grows over the view while hovered --- */
+#stage.docked{cursor:zoom-in}
+#stage.big{position:fixed!important;inset:auto;z-index:60;border-radius:8px;overflow:hidden;cursor:default;
+  box-shadow:0 14px 50px #000d;border:1px solid #3a4048}

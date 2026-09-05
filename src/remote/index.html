@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <title>Projector Remote</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0c0d10">
+<meta name="theme-color" content="#0000aa">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Projector">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
 <link rel="stylesheet" href="/remote/tw.css">
 </head>
 <body>
@@ -20,7 +22,7 @@
 
   <header id="top" class="fixed top-0 inset-x-0 z-20 safe-t px-4 pb-2 flex items-center gap-2.5 pointer-events-none">
     <span id="dot" class="w-2.5 h-2.5 rounded-full bg-warn shrink-0"></span>
-    <b class="text-[15px] tracking-tight drop-shadow">Projector</b>
+    <b class="text-[19px] tracking-tight">PROJECTOR.EXE</b>
     <span class="flex-1"></span>
     <span id="meter" class="text-xs text-ink-dim tabular-nums"></span>
   </header>
@@ -31,7 +33,7 @@
 
   <div id="msg" class="fixed inset-0 z-[15] flex flex-col items-center justify-center gap-3 px-10 text-center">
     <div class="w-16 h-16 rounded-2xl bg-white/[0.06] border border-white/20 flex items-center justify-center text-white text-3xl">▶</div>
-    <div id="msgText" class="text-xl font-semibold">Tap to start the camera</div>
+    <div id="msgText" class="text-2xl font-semibold uppercase">Tap to start the camera</div>
     <div id="msgSub" class="text-sm text-ink-dim max-w-[32ch]"></div>
   </div>
 
@@ -56,7 +58,7 @@
   </div>
 
   <div id="sheet" class="fixed left-2.5 right-2.5 z-40 safe-b bottom-[92px] p-4 rounded-2xl bg-surface-1 border border-line shadow-2xl max-h-[74vh] overflow-y-auto flex flex-col gap-3.5" hidden>
-    <div class="flex items-center gap-2 text-[17px] font-semibold">Settings<span class="flex-1"></span><button id="bSheetClose" class="h-9 px-4 rounded-lg bg-surface-2 border border-line text-sm">Done</button></div>
+    <div class="flex items-center gap-2 text-[21px] font-semibold uppercase">═ Settings ═<span class="flex-1"></span><button id="bSheetClose" class="h-9 px-4 rounded-lg bg-surface-2 border border-line text-sm">Done</button></div>
     <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Camera<select id="camSel" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal"></select></label>
     <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Tracker<select id="modelSel" class="h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal">
       <option value="lite">Lite — fastest</option><option value="full">Full — steadier</option><option value="heavy">Heavy — most accurate</option>
@@ -73,15 +75,15 @@
   <nav id="viewSeg" class="fixed inset-x-0 bottom-0 z-50 safe-b px-3 pt-1.5 bg-surface-1/95 border-t border-line backdrop-blur flex">
     <button data-view="stage" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/></svg>
-      <span class="text-[10.5px] font-semibold">Camera</span>
+      <span class="text-[13px] font-semibold">F1 Camera</span>
     </button>
     <button data-view="control" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.1" fill="currentColor" stroke="none"/></svg>
-      <span class="text-[10.5px] font-semibold">Mixer</span>
+      <span class="text-[13px] font-semibold">F2 Mixer</span>
     </button>
     <button data-view="queue" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.5" stroke-linecap="round"/><circle cx="17.2" cy="17.8" r="1.8" fill="currentColor" stroke="none"/><path d="M19 10l2.4-.7V7l-2.4.7z" fill="currentColor" stroke="none"/></svg>
-      <span class="text-[10.5px] font-semibold">Queue</span>
+      <span class="text-[13px] font-semibold">F3 Queue</span>
     </button>
   </nav>
 

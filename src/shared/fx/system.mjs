@@ -85,6 +85,7 @@ export class FxSystem {
 
     this.field = new Field(gl, 512);
     this.fieldKey = null;
+    this.subFields = new Map();     // layers that see only some shapes get their own field
     this.layers = [];               // live effect instances
     this.configKey = '';
     this.aspect = 9 / 16;
@@ -103,13 +104,21 @@ export class FxSystem {
   }
 
   // -------------------------------------------------------------- config
-  /** Reconcile the live effect instances with `project.fx`. */
-  sync(project, fx) {
+  /**
+   * Reconcile the live effect instances with `project.fx`.
+   * `opts.wall` names the wall this system draws ('projector' or 'tv'), which
+   * decides which layers take part; `opts.aspect` overrides the picture aspect
+   * (a TV showing plain video has its own); `opts.shapes === false` builds a
+   * world with no masked shapes in it, just the frame walls.
+   */
+  sync(project, fx, opts = {}) {
     this.fx = fx;
+    this.wall = opts.wall || 'projector';
     this.error = null;      // stale failures must not outlive the layer that caused them
     const refW = project.global?.refW || 1920;
     const refH = project.global?.refH || 1080;
-    this.aspect = refH / refW;
+    this.aspect = opts.aspect || refH / refW;
+    const shapes = opts.shapes !== false;
 
     if (this.quality !== (fx.quality || 'high')) {
       this.quality = fx.quality || 'high';
@@ -118,10 +127,10 @@ export class FxSystem {
     }
 
     // occluder field
-    const key = occluderKey(project, fx);
+    const key = occluderKey(project, fx) + '|' + this.wall + '|' + this.aspect.toFixed(4) + '|' + (shapes ? 1 : 0);
     if (key !== this.fieldKey) {
       this.fieldKey = key;
-      const { polys } = collectOccluders(project, fx);
+      const polys = shapes ? collectOccluders(project, fx).polys : [];
       const w = fx.walls || {};
       this.field.res = this.qual.sdf;
       this.field.build(polys, this.aspect, {
@@ -130,8 +139,28 @@ export class FxSystem {
       for (const l of this.layers) if (l.inst.onWorldChanged) l.inst.onWorldChanged(this.world());
     }
 
+    // per-layer worlds: a layer may be told to see only some of the shapes
+    const used = new Set();
+    for (const def of fx.layers || []) {
+      if (!Array.isArray(def.shapes) || !REGISTRY.has(def.type) || !layerOnWall(def, this.wall)) continue;
+      const k = def.shapes.slice().sort().join(',');
+      used.add(k);
+      let sub = this.subFields.get(k);
+      if (!sub) { sub = { field: new Field(this.gl, 512), base: null }; this.subFields.set(k, sub); }
+      if (sub.base !== key) {
+        sub.base = key;
+        const polys = shapes ? collectOccluders(project, fx, new Set(def.shapes)).polys : [];
+        const w = fx.walls || {};
+        sub.field.res = this.qual.sdf;
+        sub.field.build(polys, this.aspect, { l: w.l !== false, r: w.r !== false, t: !!w.t, b: w.b !== false });
+        for (const l of this.layers) if (l.id === def.id && l.inst.onWorldChanged) l.inst.onWorldChanged(this._layerWorld(l, this.world()));
+      }
+    }
+    for (const [k, sub] of this.subFields) if (!used.has(k)) { sub.field.dispose(); this.subFields.delete(k); }
+
     // layer reconciliation by id
-    const want = (fx.layers || []).filter((l) => REGISTRY.has(l.type));
+    const wall = this.wall;
+    const want = (fx.layers || []).filter((l) => REGISTRY.has(l.type) && layerOnWall(l, wall));
     const byId = new Map(this.layers.map((l) => [l.id, l]));
     const next = [];
     for (const def of want) {
@@ -151,6 +180,7 @@ export class FxSystem {
       live.def = def;
       live.base = withDefaults(live.spec, def.params);
       live.params = live.base;
+      live.field = Array.isArray(def.shapes) ? this.subFields.get(def.shapes.slice().sort().join(','))?.field || this.field : this.field;
       byId.delete(def.id);
       next.push(live);
     }
@@ -188,6 +218,13 @@ export class FxSystem {
       size: [this.chainW, this.chainH],
       screen: this.screen,
     };
+  }
+
+  /** The world as one layer sees it: the shared field, or its own subset of shapes. */
+  _layerWorld(l, w) {
+    const f = l.field || this.field;
+    if (f === this.field) return w;
+    return { ...w, field: f, sdfTex: f.tex, sdfTexel: f.texel };
   }
 
   setInteractors(list) { this.interactors = list || []; }
@@ -228,7 +265,9 @@ export class FxSystem {
     const aud = this.fx?.audio;
     const listening = !!(aud && aud.enabled && this.audio.live);
     for (const l of this.layers) {
-      l.params = listening ? modulate(l.spec, l.base, l.def.mod, this.audio) : l.base;
+      let p = listening ? modulate(l.spec, l.base, l.def.mod, this.audio) : l.base;
+      if (l.def.palette && l.def.palette !== 'fixed') p = applyPalette(l.spec, p, l.def.palette, this.palette);
+      l.params = p;
     }
     if (listening && this.audio.onset) {
       this.beatCount++;
@@ -237,7 +276,7 @@ export class FxSystem {
         if (!t || !t.action || l.def.enabled === false) continue;
         const every = Math.max(1, Math.round(t.every || 1));
         if (this.beatCount % every) continue;
-        try { l.inst.action?.(t.action, t.arg, this.world(STEP), l.params); } catch (e) { console.error('[fx beat]', e); }
+        try { l.inst.action?.(t.action, t.arg, this._layerWorld(l, this.world(STEP)), l.params); } catch (e) { console.error('[fx beat]', e); }
       }
     }
 
@@ -246,7 +285,7 @@ export class FxSystem {
       for (const [id, name, arg] of this.pendingActions) {
         for (const l of this.layers) {
           if (id && l.id !== id) continue;
-          try { l.inst.action?.(name, arg, this.world(STEP), l.params); } catch (e) { console.error('[fx action]', e); }
+          try { l.inst.action?.(name, arg, this._layerWorld(l, this.world(STEP)), l.params); } catch (e) { console.error('[fx action]', e); }
         }
       }
       this.pendingActions.length = 0;
@@ -259,7 +298,7 @@ export class FxSystem {
       const w = this.world(STEP);
       for (const l of this.layers) {
         if (l.def.enabled === false) continue;
-        try { l.inst.step(STEP, w, l.params); } catch (e) { this.error = l.type + ': ' + e.message; console.error('[fx step]', l.type, e); }
+        try { l.inst.step(STEP, this._layerWorld(l, w), l.params); } catch (e) { this.error = l.type + ': ' + e.message; console.error('[fx step]', l.type, e); }
       }
       steps++;
     }
@@ -305,6 +344,7 @@ export class FxSystem {
     let cur = this.tA, other = this.tB;
     const w = this.world(0);
     w.size = [cw, ch];
+    this._samplePalette(compTex);
 
     for (const l of this.layers) {
       if (l.def.enabled === false) continue;
@@ -317,7 +357,7 @@ export class FxSystem {
           // pass the picture through where it contributes nothing.
           other.bind();
           gl.disable(gl.BLEND);
-          l.inst.draw({ ...w, src: cur.tex, dst: other, opacity, params: l.params });
+          l.inst.draw({ ...this._layerWorld(l, w), src: cur.tex, dst: other, opacity, params: l.params });
           const t = cur; cur = other; other = t;
         } else {
           cur.bind();
@@ -325,7 +365,7 @@ export class FxSystem {
           // reading the target it is drawing into would be undefined, so an
           // overlay layer gets no background texture; effects that need to
           // sample the picture declare blend 'post' instead.
-          l.inst.draw({ ...w, src: null, dst: cur, opacity, params: l.params });
+          l.inst.draw({ ...this._layerWorld(l, w), src: null, dst: cur, opacity, params: l.params });
           gl.disable(gl.BLEND);
         }
       } catch (e) {
@@ -370,13 +410,132 @@ export class FxSystem {
     return other.tex;
   }
 
+  // ------------------------------------------------------------- palette
+  /**
+   * A few colours read off the current picture, so a layer can take its
+   * colours from the video instead of from fixed swatches: the dominant hue,
+   * a second one, the average, and their complements and inverses. 256 point
+   * samples every few frames are plenty for a dominant colour.
+   */
+  _samplePalette(compTex) {
+    const gl = this.gl;
+    this.palFrame = (this.palFrame || 0) + 1;
+    if (this.palFrame % 4 !== 1) return;
+    if (!this.palTarget) {
+      this.palTarget = new Target(gl, 16, 16, 'rgba8');
+      this.palBuf = new Uint8Array(16 * 16 * 4);
+      this.palette = defaultPalette();
+    }
+    this.screen.copy(compTex, this.palTarget, 1);
+    gl.readPixels(0, 0, 16, 16, gl.RGBA, gl.UNSIGNED_BYTE, this.palBuf);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.palette = analysePalette(this.palBuf, this.palette);
+  }
+
   dispose() {
     for (const l of this.layers) l.inst.dispose?.();
+    for (const sub of this.subFields.values()) sub.field.dispose();
+    this.subFields.clear();
+    if (this.palTarget) { this.palTarget.dispose(); this.palTarget = null; }
     this.layers.length = 0;
     for (const k of ['tA', 'tB', 'bloomA', 'bloomB']) if (this[k]) { this[k].dispose(); this[k] = null; }
     this.field.dispose();
     this.chainW = this.chainH = 0;
   }
+}
+
+// --------------------------------------------------------------- palette ----
+export const PALETTE_MODES = [
+  ['fixed', 'Fixed colours'],
+  ['video', 'From the video'],
+  ['complement', 'Complement the video'],
+  ['invert', 'Invert the video'],
+  ['tone', 'Match the video\u2019s tone'],
+];
+
+function defaultPalette() {
+  return { dominant: [0.4, 0.7, 1], second: [1, 0.5, 0.3], average: [0.5, 0.5, 0.5],
+    complement: [1, 0.6, 0.4], complement2: [0.3, 0.8, 1], invert: [0.5, 0.5, 0.5], light: [0.8, 0.8, 0.8] };
+}
+
+function rgb2hsv(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d > 1e-6) {
+    if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h /= 6; if (h < 0) h += 1;
+  }
+  return [h, mx > 1e-6 ? d / mx : 0, mx];
+}
+function hsv2rgb(h, s, v) {
+  const f = (n) => { const k = (n + h * 6) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return [f(5), f(3), f(1)];
+}
+
+function analysePalette(buf, prev) {
+  const bins = 24;
+  const hw = new Float64Array(bins), hr = new Float64Array(bins), hg = new Float64Array(bins), hb = new Float64Array(bins);
+  let ar = 0, ag = 0, ab = 0, n = 0;
+  for (let i = 0; i < buf.length; i += 4) {
+    const r = buf[i] / 255, g = buf[i + 1] / 255, b = buf[i + 2] / 255;
+    ar += r; ag += g; ab += b; n++;
+    const [h, s, v] = rgb2hsv(r, g, b);
+    const w = s * s * v + 1e-4;          // saturated, bright pixels decide the hue
+    const k = Math.min(bins - 1, Math.floor(h * bins));
+    hw[k] += w; hr[k] += r * w; hg[k] += g * w; hb[k] += b * w;
+  }
+  if (!n) return prev;
+  const avg = [ar / n, ag / n, ab / n];
+  // dominant hue bin (with its neighbours), then the best bin far from it
+  const score = (k) => hw[k] + 0.5 * (hw[(k + 1) % bins] + hw[(k + bins - 1) % bins]);
+  let k1 = 0; for (let k = 1; k < bins; k++) if (score(k) > score(k1)) k1 = k;
+  let k2 = -1; for (let k = 0; k < bins; k++) { const dist = Math.min(Math.abs(k - k1), bins - Math.abs(k - k1)); if (dist >= 5 && (k2 < 0 || score(k) > score(k2))) k2 = k; }
+  const col = (k) => {
+    if (k < 0 || hw[k] < 1e-3) return null;
+    const c = [hr[k] / hw[k], hg[k] / hw[k], hb[k] / hw[k]];
+    const [h, s, v] = rgb2hsv(c[0], c[1], c[2]);
+    return hsv2rgb(h, Math.min(1, s * 1.35 + 0.15), Math.min(1, v * 1.1 + 0.15));   // a swatch, not a smear
+  };
+  const dom = col(k1) || prev.dominant;
+  const sec = col(k2) || hsv2rgb((rgb2hsv(...dom)[0] + 1 / 3) % 1, 0.8, 0.9);
+  const comp = (c) => { const [h, s, v] = rgb2hsv(c[0], c[1], c[2]); return hsv2rgb((h + 0.5) % 1, Math.max(0.6, s), Math.max(0.7, v)); };
+  const [ah, as, av] = rgb2hsv(avg[0], avg[1], avg[2]);
+  // ease towards the new reading so a cut does not flash the colours
+  const ease = (a, b) => a ? [a[0] + (b[0] - a[0]) * 0.25, a[1] + (b[1] - a[1]) * 0.25, a[2] + (b[2] - a[2]) * 0.25] : b;
+  return {
+    dominant: ease(prev.dominant, dom),
+    second: ease(prev.second, sec),
+    average: ease(prev.average, avg),
+    complement: ease(prev.complement, comp(dom)),
+    complement2: ease(prev.complement2, comp(sec)),
+    invert: ease(prev.invert, [1 - avg[0], 1 - avg[1], 1 - avg[2]]),
+    light: ease(prev.light, hsv2rgb(ah, Math.min(0.5, as), Math.min(1, av * 0.6 + 0.5))),
+  };
+}
+
+const hex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+
+/** Replace a layer's colour parameters according to its palette mode. */
+export function applyPalette(spec, params, mode, pal) {
+  if (!pal) return params;
+  const colours = (spec.params || []).filter((p) => p.type === 'color');
+  if (!colours.length) return params;
+  let list;
+  switch (mode) {
+    case 'video': list = [pal.dominant, pal.second, pal.light, pal.average]; break;
+    case 'complement': list = [pal.complement, pal.complement2, pal.light, pal.invert]; break;
+    case 'invert': list = [pal.invert, [1 - pal.dominant[0], 1 - pal.dominant[1], 1 - pal.dominant[2]], [1 - pal.second[0], 1 - pal.second[1], 1 - pal.second[2]], pal.light]; break;
+    case 'tone': list = [pal.average, pal.light, pal.dominant, pal.second]; break;
+    default: return params;
+  }
+  const out = { ...params };
+  colours.forEach((p, i) => { out[p.key] = hex(list[i % list.length]); });
+  return out;
+}
+
+/** Does this layer show on the given wall ('projector' | 'tv')? Missing means yes. */
+export function layerOnWall(l, wall) {
+  return !l.show || l.show[wall] !== false;
 }
 
 export function withDefaults(spec, params) {

@@ -497,34 +497,68 @@ export class Engine {
     const blend = opts.blend != null ? opts.blend : this._blendFactor(g.smoothMotion);
 
     if (mode === 'fill') {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      // The plain full-screen picture (the TV). It goes through an
+      // intermediate target so the effects stack can run over it exactly as it
+      // does over the mapped picture; there are no masks on this wall.
+      const comp = this._target('comp', W, H, false);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, comp.fbo);
       gl.viewport(0, 0, W, H);
       gl.disable(gl.BLEND);
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
-      if (!hasSrc) return;
-      const cr = this.crop;
-      const sw = this.sourceSize[0] * cr[2], sh = this.sourceSize[1] * cr[3];
-      let rect = [0, 0, 1, 1];
-      const fit = opts.fit || 'contain';
-      if (fit !== 'stretch') {
-        const sa = sw / sh, da = W / H;
-        const wide = fit === 'contain' ? sa > da : sa < da;
-        if (wide) { const s = da / sa; rect = [0, (1 - s) / 2, 1, s]; }
-        else { const s = sa / da; rect = [(1 - s) / 2, 0, s, 1]; }
+      if (hasSrc) {
+        const cr = this.crop;
+        const sw = this.sourceSize[0] * cr[2], sh = this.sourceSize[1] * cr[3];
+        let rect = [0, 0, 1, 1];
+        const fit = opts.fit || 'contain';
+        if (fit !== 'stretch') {
+          const sa = sw / sh, da = W / H;
+          const wide = fit === 'contain' ? sa > da : sa < da;
+          if (wide) { const s = da / sa; rect = [0, (1 - s) / 2, 1, s]; }
+          else { const s = sa / da; rect = [(1 - s) / 2, 0, s, 1]; }
+        }
+        gl.useProgram(this.progDirect.p);
+        this._bindQuad(this.progDirect);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+        gl.uniform1i(this.progDirect.u.uTex, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
+        gl.uniform1i(this.progDirect.u.uPrev, 1);
+        gl.uniform1f(this.progDirect.u.uBlend, blend);
+        gl.uniform4f(this.progDirect.u.uRect, rect[0], rect[1], rect[2], rect[3]);
+        gl.uniform4f(this.progDirect.u.uCrop, cr[0], cr[1], cr[2], cr[3]);
+        gl.uniform1f(this.progDirect.u.uDim, 1);
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
       }
-      gl.useProgram(this.progDirect.p);
-      this._bindQuad(this.progDirect);
+      let sceneTex = comp.tex;
+      if (this.fx && this.fx.active()) {
+        try { sceneTex = this.fx.render(comp.tex, W, H, [0, 0, 0]); }
+        catch (e) { console.error('[fx] render failed', e); sceneTex = comp.tex; }
+        gl.viewport(0, 0, W, H);
+        gl.disable(gl.BLEND);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(this.progComp.p);
+      this._bindQuad(this.progComp);
+      const C = this.progComp.u;
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
-      gl.uniform1i(this.progDirect.u.uTex, 0);
+      gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+      gl.uniform1i(C.uComp, 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
-      gl.uniform1i(this.progDirect.u.uPrev, 1);
-      gl.uniform1f(this.progDirect.u.uBlend, blend);
-      gl.uniform4f(this.progDirect.u.uRect, rect[0], rect[1], rect[2], rect[3]);
-      gl.uniform4f(this.progDirect.u.uCrop, cr[0], cr[1], cr[2], cr[3]);
-      gl.uniform1f(this.progDirect.u.uDim, dim);
+      gl.bindTexture(gl.TEXTURE_2D, comp.tex);
+      gl.uniform1i(C.uMask, 1);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
+      gl.uniform1i(C.uOverlay, 2);
+      gl.uniform1f(C.uHasMask, 0);
+      gl.uniform1f(C.uHasOverlay, 0);
+      gl.uniform1f(C.uDim, dim);
+      gl.uniform1f(C.uOpaque, 1);
+      gl.uniform3f(C.uBg, 0, 0, 0);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
       return;
     }

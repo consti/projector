@@ -29,7 +29,7 @@ window.__fx = fx;
 api.onFxInteract((pts) => fx.setInteractors(pts));
 api.onFxAction((a) => fx.action(a.layerId, a.name, a.arg));
 api.onFxAudio((f) => fx.setRemoteAudio(f));
-player.onended = () => api.ended();
+player.onended = () => { if ((state.clockOwner || 'control') === role) api.ended(); };
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -118,12 +118,19 @@ function frame() {
   }
 
   const ownsAudio = state.audioOut === role;
+  // The TV is its own wall: plain video with the effects running over it (no
+  // shapes in that world, and its own aspect), unless its effects are off.
+  const wall = role === 'tv' ? 'tv' : 'projector';
+  const fill = cfg.mode !== 'mapped';
   fx.frame(p, {
     playing: !!(state.transport && state.transport.playing),
     audioEl: player.separateAudio ? player.audio : player.video,
     ownsAudio,
+    wall,
+    off: fill && cfg.fx === false,
+    aspect: fill ? canvas.height / Math.max(1, canvas.width) : undefined,
+    shapes: !fill,
   });
-  if (cfg.mode !== 'mapped') engine.setFx(null);
   if (fx.outgoingAudio && (performance.now() - lastAudioSend) > 33) {
     lastAudioSend = performance.now();
     api.fxAudio(fx.outgoingAudio);

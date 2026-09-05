@@ -5,11 +5,11 @@ import { makePattern } from '/shared/patterns.mjs';
 import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLayer } from '/shared/schema.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
-import { buildFxSection, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
+import { buildFxSection, buildFxWorldSections, buildFxBrowser, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
 import { LibraryView } from '/renderer/control/library.mjs';
-import { REGISTRY as FX_REGISTRY, QUALITY } from '/shared/fx/system.mjs';
+import { REGISTRY as FX_REGISTRY, QUALITY, withDefaults, PALETTE_MODES } from '/shared/fx/system.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
 
@@ -54,6 +54,10 @@ const player = new Player();
 player.onmeta = (m) => api.report({ duration: m.duration });
 player.onResync = (t) => { if (S && S.clockOwner === 'control') api.cmd('resync', { t, role: 'control' }); };
 player.onFrame = () => stage.engine.markSourceDirty();
+// Only the window that carries the clock says when a track is over; when no
+// output window is open that is this one, and without this the playlist never
+// advanced.
+player.onended = () => { if (S && (S.clockOwner || 'control') === 'control') api.ended(); };
 
 // ------------------------------------------------------------------- stage --
 const stage = new Stage({
@@ -64,7 +68,39 @@ const stage = new Stage({
   outputSize: () => outputSize(),
   onChange: (commit) => pushProject(commit),
   onSelect: () => buildInspector(),
+  fxPoints: () => fxPoints(),
 });
+
+// The selected effect layer's draggable points: any effect with both an `x`
+// and a `y` parameter gets a handle on the stage (a lamp, a vanishing point,
+// the centre of a kaleidoscope), so it can be placed by dragging rather than
+// by two sliders.
+function fxPoints() {
+  if (currentView !== 'effects') return null;
+  const fx = project.fx;
+  if (!fx || !fx.enabled || !fxLayerSel) return null;
+  const L = (fx.layers || []).find((l) => l.id === fxLayerSel);
+  if (!L || L.enabled === false) return null;
+  const spec = FX_REGISTRY.get(L.type);
+  if (!spec) return null;
+  const px = (spec.params || []).find((q) => q.key === 'x' && q.type === 'range');
+  const py = (spec.params || []).find((q) => q.key === 'y' && q.type === 'range');
+  if (!px || !py) return null;
+  const P = L.params || (L.params = {});
+  const label = px.label.replace(/\s*x$/i, '') || spec.label;
+  return [{
+    id: L.id, label, color: '#ffd60a',
+    x: P.x == null ? px.def : P.x,
+    y: P.y == null ? py.def : P.y,
+    set: (x, y) => {
+      P.x = Math.round(Math.max(px.min, Math.min(px.max, x)) * 1000) / 1000;
+      P.y = Math.round(Math.max(py.min, Math.min(py.max, y)) * 1000) / 1000;
+      if (P.followPointer) P.followPointer = false;   // dragging the handle takes over
+      pushProject();
+    },
+    done: () => { pushProject(true); },
+  }];
+}
 
 // ---------------------------------------------------------------- effects --
 const fxHost = new FxHost(stage.engine, 'control');
@@ -161,10 +197,75 @@ function usePreviewStream() {
 }
 
 function outputSize() {
+  if (previewWall === 'tv') {
+    const t = displays.find((x) => x.id === S?.outputs?.tv?.displayId);
+    if (t) return [t.size.width, t.size.height];
+  }
   const d = displays.find((x) => x.id === S?.outputs?.projector?.displayId);
   if (d) return [d.size.width, d.size.height];
   return [project.global.refW || 1920, project.global.refH || 1080];
 }
+
+// ------------------------------------------------------------ preview wall --
+// The live preview can show either wall: the projector's mapped picture (where
+// the areas and masks are edited) or the TV's plain picture with its effects.
+let previewWall = 'projector';
+function setPreviewWall(w) {
+  if (previewWall === w) return;
+  previewWall = w;
+  stage.plain = w === 'tv';
+  stage.select(null, null);
+  for (const b of document.querySelectorAll('.wallSeg button')) b.classList.toggle('on', b.dataset.wall === w);
+  stage.layout(); stage.draw();
+}
+function buildPreviewHeads() {
+  for (const head of document.querySelectorAll('.previewHead')) {
+    if (head.querySelector('.wallSeg')) continue;
+    const seg = el('div', { class: 'wallSeg', title: 'Which wall the preview shows' }, [
+      el('button', { 'data-wall': 'projector', class: 'on', text: 'Projector', onclick: () => setPreviewWall('projector') }),
+      el('button', { 'data-wall': 'tv', text: 'TV', onclick: () => setPreviewWall('tv') }),
+    ]);
+    head.appendChild(seg);
+  }
+}
+buildPreviewHeads();
+
+// Hovering the small docked preview blows it up over the view so you can see
+// what is happening on the wall without leaving the panel you are in.
+let previewShrink = null;
+(function hoverPreview() {
+  const stageEl = $('#stage');
+  let timer = null;
+  const grow = () => {
+    if (!stageEl.classList.contains('docked')) return;
+    const slot = stageEl.parentElement;
+    const r = slot.getBoundingClientRect();
+    const m = $('#main').getBoundingClientRect();
+    if (!r.width) return;
+    const ar = r.height / r.width;
+    let w = Math.min(r.right - m.left - 24, r.width * 2.6, (m.height - 24) / ar);
+    const h = w * ar;
+    const left = r.right - w;
+    const top = Math.max(m.top + 12, Math.min(r.top, m.bottom - h - 12));
+    stageEl.classList.add('big');
+    Object.assign(stageEl.style, { left: left + 'px', top: top + 'px', width: w + 'px', height: h + 'px' });
+    requestAnimationFrame(() => { stage.layout(); stage.draw(); });
+  };
+  const shrink = () => {
+    clearTimeout(timer); timer = null;
+    if (!stageEl.classList.contains('big')) return;
+    stageEl.classList.remove('big');
+    stageEl.style.left = stageEl.style.top = stageEl.style.width = stageEl.style.height = '';
+    requestAnimationFrame(() => { stage.layout(); stage.draw(); });
+  };
+  stageEl.addEventListener('pointerenter', () => {
+    if (!stageEl.classList.contains('docked')) return;
+    clearTimeout(timer); timer = setTimeout(grow, 220);
+  });
+  stageEl.addEventListener('pointerleave', shrink);
+  window.addEventListener('blur', shrink);
+  previewShrink = shrink;
+})();
 
 let pushTimer = null;
 function pushProject(commit) {
@@ -261,6 +362,9 @@ function deckState() {
         return {
           id: L.id, type: L.type, name: L.name || s.label || L.type,
           opacity: L.opacity == null ? 1 : L.opacity, on: L.enabled !== false,
+          show: { projector: !L.show || L.show.projector !== false, tv: !L.show || L.show.tv !== false },
+          palette: L.palette || 'fixed',
+          params: s.params ? withDefaults(s, L.params) : {},
           actions: (s.actions || []).map((x) => ({ name: x.name, label: x.label })),
         };
       }),
@@ -269,6 +373,7 @@ function deckState() {
     outputs: {
       projector: !!(S && S.outputs && S.outputs.projector.enabled),
       tv: !!(S && S.outputs && S.outputs.tv.enabled),
+      tvFx: !!(S && S.outputs && S.outputs.tv.fx !== false),
       projectorLabel: (S && S.outputs && S.outputs.projector.displayLabel) || null,
       tvLabel: (S && S.outputs && S.outputs.tv.displayLabel) || null,
     },
@@ -303,12 +408,17 @@ let DECK_CATALOG = null;
 function deckCatalog() {
   if (DECK_CATALOG) return DECK_CATALOG;
   const effects = [...FX_REGISTRY.values()]
-    .map((s) => ({ type: s.type, label: s.label || s.type }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .map((s) => ({
+      type: s.type, label: s.label || s.type, group: s.group || 'Other', hint: s.hint || '',
+      // the parameter schema, so the phone can build sliders for a layer
+      params: (s.params || []).map((p) => ({ key: p.key, label: p.label, type: p.type, def: p.def, min: p.min, max: p.max, step: p.step, options: p.options })),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
   DECK_CATALOG = {
     effects,
     scenes: SCENES.map((s) => s.name),
     qualities: [...QUALITY_KEYS],
+    palettes: PALETTE_MODES,
   };
   return DECK_CATALOG;
 }
@@ -335,6 +445,7 @@ function remoteControl(op, a = {}) {
     case 'layerAction': if (layer(a.id)) fxAction(a.id, a.name); return;
     case 'layerOpacity': { const L = layer(a.id); if (L) { L.opacity = Math.max(0, Math.min(1, a.value)); pushProject(); } return; }
     case 'layerOn': { const L = layer(a.id); if (L) { L.enabled = !!a.on; pushProject(true); buildInspector(); } return; }
+    case 'layerPalette': { const L = layer(a.id); if (L && PALETTE_MODES.some((m) => m[0] === a.value)) { L.palette = a.value; pushProject(true); buildInspector(); } return; }
     case 'removeLayer': fx.layers = (fx.layers || []).filter((L) => L.id !== a.id); pushProject(true); buildInspector(); return;
     case 'addLayer':
       if (!FX_REGISTRY.get(a.type)) return;
@@ -355,6 +466,20 @@ function remoteControl(op, a = {}) {
 
     // --- transport / queue / outputs / audio, for the phone ---
     case 'output': api.setOutput(a.role, { enabled: !!a.enabled }); return;
+    case 'tvFx': api.setOutput('tv', { fx: !!a.on }); return;
+    case 'layerShow': { const L = layer(a.id); if (L) { (L.show || (L.show = { projector: true, tv: true }))[a.wall] = !!a.on; pushProject(true); buildInspector(); } return; }
+    case 'layerParam': {
+      const L = layer(a.id); if (!L) return;
+      const spec = FX_REGISTRY.get(L.type); const P = spec && (spec.params || []).find((q) => q.key === a.key);
+      if (!P) return;
+      let v = a.value;
+      if (P.type === 'range') v = Math.max(P.min, Math.min(P.max, Number(v)));
+      else if (P.type === 'bool') v = !!v;
+      else if (P.type === 'select') { if (!P.options.some((o) => o[0] === v)) return; }
+      (L.params || (L.params = {}))[a.key] = v;
+      pushProject(true);
+      return;
+    }
     case 'playIndex': api.cmd('load', a.index); return;
     case 'removeIndex': {
       const items = S.playlist.items.slice(); if (a.index < 0 || a.index >= items.length) return;
@@ -421,10 +546,10 @@ $('#plLoad').onchange = async (e) => {
   const n = await api.playlistsLoad(name);
   toast('Loaded ' + name + ' (' + n + ')');
 };
-$('#plDiscover').onclick = () => toggleDiscover();
+$('#plDiscover input').onchange = () => toggleDiscover();
 function syncPlaylistTools() {
   const on = !!(S && S.playlist && S.playlist.autoDiscover);
-  $('#plDiscover').classList.toggle('on', on);
+  $('#plDiscover input').checked = on;
   libraryView.setDiscover(on);
 }
 refreshPlaylists();
@@ -450,9 +575,9 @@ $('#scrub').oninput = (e) => {
   const d = S.transport.duration || 0;
   if (d) api.cmd('seek', (e.target.value / 1000) * d);
 };
-$('#gBlack').onclick = () => { project.global.blackout = !project.global.blackout; pushProject(true); };
-$('#oProj').onclick = () => toggleOutput('projector');
-$('#oTv').onclick = () => toggleOutput('tv');
+$('#gBlack input').onchange = () => { project.global.blackout = !project.global.blackout; pushProject(true); syncTopSideButtons(); };
+$('#oProj input').onchange = () => toggleOutput('projector').then(syncTopSideButtons);
+$('#oTv input').onchange = () => toggleOutput('tv').then(syncTopSideButtons);
 
 async function toggleOutput(role) {
   const cur = S.outputs[role];
@@ -528,13 +653,8 @@ document.querySelectorAll('[data-tool]').forEach((b) => {
 });
 document.querySelector('[data-tool=select]').classList.add('on');
 
-$('#handlesBtn').classList.add('on');
-$('#handlesBtn').onclick = (e) => {
-  stage.showHandles = !stage.showHandles;
-  e.target.classList.toggle('on', stage.showHandles);
-  stage.draw();
-};
-$('#guidesBtn').onclick = () => { project.global.showGuides = !project.global.showGuides; pushProject(true); };
+$('#handlesBtn input').onchange = (e) => { stage.showHandles = e.target.checked; stage.draw(); };
+$('#guidesBtn input').onchange = (e) => { project.global.showGuides = e.target.checked; pushProject(true); };
 $('#patSelect').onchange = (e) => { project.global.testPattern = e.target.value; pushProject(true); };
 $('#fitBtn').onclick = () => stage.resetView();
 $('#dupBtn').onclick = duplicateSelected;
@@ -607,12 +727,16 @@ function numberRow(label, get, set, { step = 0.001, min, max } = {}) {
   return el('div', { class: 'ctl wide' }, [el('label', { text: label }), inp]);
 }
 
-function toggle(label, get, set) {
-  const b = el('button', { class: 'btn grow', text: label });
-  const show = () => b.classList.toggle('on', !!get());
-  b.onclick = () => { set(!get()); pushProject(true); show(); };
+// A boolean is a switch. `opts.push === false` for settings that live outside
+// the project (outputs, app settings) and are pushed by their own setter.
+function toggle(label, get, set, opts = {}) {
+  const inp = el('input', { type: 'checkbox' });
+  const lab = el('label', { class: 'tog' + (opts.danger ? ' danger' : '') + (opts.grow ? ' grow' : ''), title: opts.title || null },
+    [inp, el('span', { class: 'sw' }), el('span', { class: 'tl', text: label })]);
+  const show = () => { inp.checked = !!get(); };
+  inp.onchange = () => { set(inp.checked); if (opts.push !== false) pushProject(true); show(); };
   updaters.push(show); show();
-  return b;
+  return lab;
 }
 
 function textRow(label, get, set) {
@@ -665,7 +789,12 @@ function buildInspector() {
   hosts.fx.innerHTML = '';
   hosts.fx.appendChild(fxSection());
 
+  const browser = $('#fxBrowser');
+  if (browser && !browser.firstChild) browser.appendChild(buildFxBrowser(fxUi()));
+  else if (browser) buildFxBrowser(fxUi());      // refresh the badges
+
   hosts.look.innerHTML = '';
+  for (const sec of buildFxWorldSections(fxUi())) hosts.look.appendChild(sec);
   hosts.look.appendChild(lookSection());
 
   hosts.out.innerHTML = '';
@@ -682,6 +811,7 @@ function buildInspector() {
 let currentView = 'stage';
 function showView(name) {
   currentView = name;
+  if (previewShrink) previewShrink();
   for (const b of document.querySelectorAll('#rail .railBtn')) b.classList.toggle('on', b.dataset.view === name);
   for (const v of document.querySelectorAll('#main .view')) v.hidden = v.id !== 'v' + name[0].toUpperCase() + name.slice(1);
   const view = $('#v' + name[0].toUpperCase() + name.slice(1));
@@ -694,10 +824,11 @@ function showView(name) {
   requestAnimationFrame(() => { stage.layout(); stage.draw && stage.draw(); });
 }
 
-function fxSection() {
-  ensureFx(project);
-  return buildFxSection({
-    el, section, slider, toggle, selectRow, numberRow, colorRow, updaters,
+function fxSection() { ensureFx(project); return buildFxSection(fxUi()); }
+
+function fxUi() {
+  return ({
+    el, section, slider, toggle, selectRow, numberRow, colorRow, textRow, updaters,
     project: () => project,
     push: (commit) => pushProject(commit),
     rebuild: () => buildInspector(),
@@ -735,17 +866,20 @@ function outputSection() {
     }
     sel.value = cfg.displayId || '';
     sel.onchange = () => api.setOutput(role, { displayId: sel.value || null });
-    const on = el('button', { class: 'btn' + (cfg.enabled ? ' on' : ''), text: cfg.enabled ? 'On' : 'Off' });
-    on.onclick = () => toggleOutput(role);
+    const on = toggle('On', () => S.outputs[role].enabled, () => toggleOutput(role), { push: false });
     rows.push(el('div', { class: 'ctl wide' }, [
       el('label', { text: role === 'projector' ? 'Projector' : 'TV' }),
-      el('div', { class: 'row' }, [sel, on]),
+      el('div', { class: 'row nowrap' }, [sel, on]),
     ]));
     if (role === 'tv') {
       rows.push(selectRow('TV shows', [['fill', 'Full video (fit)'], ['mapped', 'Same as projector']],
         () => S.outputs.tv.mode, (v) => api.setOutput('tv', { mode: v })));
       rows.push(selectRow('Fit', [['contain', 'Contain (letterbox)'], ['cover', 'Cover (crop)'], ['stretch', 'Stretch']],
         () => S.settings.fitMode, (v) => api.patchState({ settings: { fitMode: v } })));
+      rows.push(el('div', { class: 'row' }, [
+        toggle('Effects on the TV', () => S.outputs.tv.fx !== false, (v) => api.setOutput('tv', { fx: v }), { push: false }),
+      ]));
+      rows.push(el('div', { class: 'hint', text: 'The TV is a second wall: it plays the same video, plain and full-screen, and the effects run over it too. Each effect layer chooses which walls it shows on (Effects view). The TV has no masked shapes, only the edges of its frame.' }));
     rows.push(selectRow('Preview quality',
       [['auto', 'Small while an output is open'], ['low', 'Always small'], ['full', 'Always full size']],
       () => S.settings.previewQuality || 'auto', (v) => api.patchState({ settings: { previewQuality: v } })));
@@ -920,7 +1054,9 @@ function selectionSection() {
   } else {
     rows.push(el('div', { class: 'row' }, [
       toggle('Show only inside (invert)', () => o.invert, (v) => (o.invert = v)),
+      toggle('Effects see this shape', () => o.fxCollide !== false, (v) => { o.fxCollide = v; pushProject(true); }),
     ]));
+    rows.push(el('div', { class: 'hint', text: 'Shapes the effects can see are solid for balls and water, and are what the Shapes effects (shadows, blocks, aura) act on.' }));
     rows.push(slider('Softness', () => o.feather, (v) => (o.feather = v), { min: 0, max: 120, step: 1, fmt: (v) => v + 'px' }));
     rows.push(slider('Grow', () => o.grow, (v) => (o.grow = v), { min: -60, max: 60, step: 1, fmt: (v) => v + 'px' }));
     rows.push(slider('Strength', () => o.opacity, (v) => (o.opacity = v), { max: 1, fmt: pc }));
@@ -1025,9 +1161,12 @@ function srcMapWidget(o) {
 
 function layerRow(o, kind, i, list) {
   const on = stage.sel?.id === o.id;
+  const chk = el('input', { type: 'checkbox', title: 'Show / hide' });
+  chk.checked = !!o.enabled;
+  chk.onclick = (e) => e.stopPropagation();
+  chk.onchange = () => { o.enabled = chk.checked; pushProject(true); buildInspector(); };
   const row = el('div', { class: 'lay' + (on ? ' on' : '') + (o.enabled ? ' vis' : '') + (kind === 'mask' ? ' mk' : '') }, [
-    el('span', { class: 'eye', text: o.enabled ? '\u25CF' : '\u25CB', title: 'Show / hide',
-      onclick: (e) => { e.stopPropagation(); o.enabled = !o.enabled; pushProject(true); buildInspector(); } }),
+    chk,
     el('span', { class: 'nm', text: (kind === 'surface' ? (i + 1) + '. ' : '') + (o.name || kind), title: o.name }),
     el('span', { class: 'ar', text: '\u25B2', title: 'Move up',
       onclick: (e) => { e.stopPropagation(); if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); pushProject(true); buildInspector(); } } }),
@@ -1293,10 +1432,10 @@ function applyState(s) {
 }
 
 function syncTopSideButtons() {
-  $('#oProj').classList.toggle('on', !!S.outputs.projector.enabled);
-  $('#oTv').classList.toggle('on', !!S.outputs.tv.enabled);
-  $('#gBlack').classList.toggle('on', !!project.global.blackout);
-  $('#guidesBtn').classList.toggle('on', !!project.global.showGuides);
+  $('#oProj input').checked = !!S.outputs.projector.enabled;
+  $('#oTv input').checked = !!S.outputs.tv.enabled;
+  $('#gBlack input').checked = !!project.global.blackout;
+  $('#guidesBtn input').checked = !!project.global.showGuides;
   const rep = S.transport.repeat || 'all';
   const rb = $('#tRepeat');
   rb.classList.toggle('on', rep !== 'off');
@@ -1370,16 +1509,22 @@ function frame() {
     }
     stage.previewDim = 1;
     pumpInteractors();
+    const tvPreview = previewWall === 'tv';
+    const tvFill = tvPreview && (S.outputs.tv.mode || 'fill') !== 'mapped';
     fxHost.frame(project, {
       playing: !!S.transport.playing,
       audioEl: player.separateAudio ? player.audio : player.video,
       ownsAudio: S.audioOut === 'control',
+      wall: tvPreview ? 'tv' : 'projector',
+      off: tvFill && S.outputs.tv.fx === false,
+      aspect: tvFill ? stage.glc.height / Math.max(1, stage.glc.width) : undefined,
+      shapes: !tvFill,
     });
     if (fxHost.outgoingAudio && performance.now() - lastAudioSend > 33) {
       lastAudioSend = performance.now();
       api.fxAudio(fxHost.outgoingAudio);
     }
-    stage.engine.render(project, { mode: 'mapped', dimOverride: 1, blend: player.blendFactor(project.global.smoothMotion) });
+    stage.engine.render(project, { mode: tvFill ? 'fill' : 'mapped', fit: S.settings.fitMode || 'contain', dimOverride: 1, blend: player.blendFactor(project.global.smoothMotion) });
     stage.draw();
     if (project.fx?.interact?.cameraDebug && project.fx.interact.camera) {
       const c = $('#ovc'), dpr = window.devicePixelRatio || 1;

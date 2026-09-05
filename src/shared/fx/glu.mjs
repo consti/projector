@@ -105,6 +105,35 @@ float fresnel(vec3 n, vec3 v, float f0){
 }
 `;
 
+// Catmull-Rom bicubic reconstruction with 9 bilinear taps: a simulation grid a
+// fifth of the output resolution comes out with smooth, curved edges instead of
+// the staircase bilinear filtering leaves. Slight negative ringing is clamped.
+CHUNKS.bicubic = `
+vec4 texBicubic(sampler2D t, vec2 uv, vec2 texel){
+  vec2 pos = uv / texel - 0.5;
+  vec2 f = fract(pos);
+  vec2 c = pos - f;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 tc0 = (c - 0.5) * texel;
+  vec2 tc12 = (c + 0.5 + w2 / w12) * texel;
+  vec2 tc3 = (c + 2.5) * texel;
+  vec4 r = texture(t, vec2(tc0.x, tc0.y)) * (w0.x * w0.y)
+         + texture(t, vec2(tc12.x, tc0.y)) * (w12.x * w0.y)
+         + texture(t, vec2(tc3.x, tc0.y)) * (w3.x * w0.y)
+         + texture(t, vec2(tc0.x, tc12.y)) * (w0.x * w12.y)
+         + texture(t, vec2(tc12.x, tc12.y)) * (w12.x * w12.y)
+         + texture(t, vec2(tc3.x, tc12.y)) * (w3.x * w12.y)
+         + texture(t, vec2(tc0.x, tc3.y)) * (w0.x * w3.y)
+         + texture(t, vec2(tc12.x, tc3.y)) * (w12.x * w3.y)
+         + texture(t, vec2(tc3.x, tc3.y)) * (w3.x * w3.y);
+  return max(r, vec4(0.0));
+}
+`;
+
 CHUNKS.tonemap = `
 vec3 acesFilm(vec3 x){
   const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;

@@ -11,8 +11,19 @@ import { bubbles, goo } from './blobs.mjs';
 import rain from './rain.mjs';
 import vines from './vines.mjs';
 import { shapes, emoji } from './objects.mjs';
+import { kaleido, droste, feedback, tessellate, hyperbolic, tunnel, acid, fliptiles, chrome } from './trippy.mjs';
+import { synthwave, vhs, glitch } from './retro.mjs';
+import { mirror, room, burn } from './illusion.mjs';
+import { shadows, extrude, aura, stagelights, neon, fieldlines, shockwave, glassrim, plasma, frost, contour } from './shapes.mjs';
+import { halftone, ascii, eightbit, painterly, thermal, stainedglass } from './look.mjs';
+import tetris from './tetris.mjs';
 
 export const EFFECTS = [
   balls, shapes, emoji, water, smoke, fire, ink, snow, rain, sand, ripples,
   shatter, bubbles, goo, confetti, fireflies, lightning, aurora, blackhole, vines,
+  tetris, burn,
+  kaleido, droste, feedback, tessellate, hyperbolic, tunnel, acid, mirror, room, fliptiles, chrome,
+  synthwave, vhs, glitch,
+  halftone, ascii, eightbit, painterly, thermal, stainedglass,
+  shadows, extrude, aura, fieldlines, shockwave, glassrim, plasma, frost, contour, stagelights, neon,
 ];

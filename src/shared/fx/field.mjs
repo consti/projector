@@ -16,7 +16,7 @@ const INF = 1e20;
 
 // ---------------------------------------------------------------- occluders
 // Output-space polygons that solid things must not pass through.
-export function collectOccluders(project, fx) {
+export function collectOccluders(project, fx, only = null) {
   const polys = [];
   const refW = (project.global && project.global.refW) || 1920;
   const refH = (project.global && project.global.refH) || 1080;
@@ -24,6 +24,7 @@ export function collectOccluders(project, fx) {
   if (fx.collideMasks !== false) {
     for (const m of project.masks || []) {
       if (!m.enabled || m.fxCollide === false) continue;
+      if (only && !only.has(m.id)) continue;      // a layer that only sees some shapes
       if (!m.points || m.points.length < 3) continue;
       // grow in output px, matching what the mask actually paints
       const px = m.points.map((p) => [p[0] * refW, p[1] * refH]);

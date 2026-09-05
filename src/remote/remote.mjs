@@ -30,7 +30,7 @@ const st = {
   info: { models: false },
   wake: null,
   view: prefs.get('view', 'stage'),   // stage (camera) | control (effects deck) | queue
-  deck: null, catalog: null, library: [], libFilter: '',
+  deck: null, catalog: null, library: [], libFilter: '', openLayer: null,
 };
 
 // ---------------------------------------------------------- websocket ----
@@ -474,7 +474,7 @@ const refs = {};
 function deckShapeKey() {
   const d = st.deck, c = st.catalog;
   if (!d || !c) return '';
-  return (d.fx.layers || []).map((l) => l.id + '#' + l.actions.length).join(',') + '|s' + c.scenes.length + '|e' + c.effects.length;
+  return (d.fx.layers || []).map((l) => l.id + '#' + l.actions.length).join(',') + '|s' + c.scenes.length + '|e' + c.effects.length + '|o' + (st.openLayer || '');
 }
 function renderDeck() {
   if (st.view !== 'control') return;
@@ -491,11 +491,17 @@ function sec(headText, kids) {
   return h('div', { class: 'rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3' },
     [headText ? h('div', { class: CX.head, text: headText }) : null].concat(kids));
 }
-function setActive(btn, on) {
-  if (!btn) return;
-  btn.classList.toggle('bg-accent', on); btn.classList.toggle('border-transparent', on); btn.classList.toggle('text-black', on);
-  btn.classList.toggle('bg-surface-2', !on); btn.classList.toggle('border-line', !on); btn.classList.toggle('text-ink', !on);
+
+// a boolean is a DOS check box: [ ] / [X]
+function chk(label, get, onChange, extra = '') {
+  const inp = h('input', { type: 'checkbox', class: 'sr-only peer' });
+  inp.checked = !!get();
+  inp.addEventListener('change', () => onChange(inp.checked));
+  const lab = h('label', { class: 'flex items-center gap-3 text-[15px] min-h-[40px] select-none ' + extra }, [inp, h('span', { class: 'tgl' }), label]);
+  lab._inp = inp; lab._get = get;
+  return lab;
 }
+function syncChk(lab) { if (lab && lab._inp !== document.activeElement) lab._inp.checked = !!lab._get(); }
 
 function slider(label, min, max, step, get, onInput) {
   const inp = h('input', { type: 'range', min, max, step });
@@ -556,32 +562,34 @@ function toggleLiveFull() {
 function buildDeck(root) {
   root.textContent = '';
   refs.layers = {};
+  refs.chks = [];
 
   const wrap = h('div', { class: 'px-3.5 pt-[4.4rem] safe-pb-nav flex flex-col gap-3' });
   root.append(wrap);
 
   wrap.append(liveHero());
 
-  // --- effects master
-  refs.fxOn = h('button', { class: BTN + ' flex-1', text: 'Effects', onclick: () => ctl('fxEnabled', { on: !st.deck.fx.enabled }) });
-  refs.black = h('button', { class: BTN + ' flex-1', text: 'Blackout', onclick: () => ctl('blackout') });
+  // --- master switches
+  const fxOn = chk('Effects', () => !!st.deck.fx.enabled, (v) => ctl('fxEnabled', { on: v }));
+  const black = chk('Blackout', () => !!st.deck.blackout, () => ctl('blackout'));
+  refs.chks.push(fxOn, black);
   wrap.append(sec(null, [
-    h('div', { class: 'flex gap-2.5' }, [
-      refs.fxOn,
-      h('button', { class: BTN + ' flex-1 !bg-white/[0.08] !border-white/25 !text-white', text: '✳ Trigger', onclick: () => ctl('triggerAll') }),
-      refs.black,
-    ]),
+    h('div', { class: 'grid grid-cols-2 gap-x-3' }, [fxOn, black]),
+    h('button', { class: BTN + ' w-full !bg-white/[0.08] !border-white/25 !text-white', text: '✳ Trigger everything', onclick: () => ctl('triggerAll') }),
   ]));
 
-  // --- outputs & audio
-  refs.projBtn = h('button', { class: BTN + ' flex-1', text: 'Projector', onclick: () => ctl('output', { role: 'projector', enabled: !(st.deck.outputs && st.deck.outputs.projector) }) });
-  refs.tvBtn = h('button', { class: BTN + ' flex-1', text: 'TV', onclick: () => ctl('output', { role: 'tv', enabled: !(st.deck.outputs && st.deck.outputs.tv) }) });
+  // --- walls & audio
+  const proj = chk('Projector', () => !!(st.deck.outputs && st.deck.outputs.projector), (v) => ctl('output', { role: 'projector', enabled: v }));
+  const tv = chk('TV', () => !!(st.deck.outputs && st.deck.outputs.tv), (v) => ctl('output', { role: 'tv', enabled: v }));
+  const tvFx = chk('Effects on the TV', () => !!(st.deck.outputs && st.deck.outputs.tvFx), (v) => ctl('tvFx', { on: v }));
+  refs.chks.push(proj, tv, tvFx);
   refs.audioTarget = h('select', { class: SEL }, [['auto', 'Auto'], ['tv', 'TV'], ['projector', 'Projector'], ['control', 'Mac window'], ['none', 'Muted']].map(([v, t]) => h('option', { value: v, text: t })));
   refs.audioTarget.addEventListener('change', () => ctl('audioTarget', { value: refs.audioTarget.value }));
   refs.audioSink = h('select', { class: SEL });
   refs.audioSink.addEventListener('change', () => { const o = refs.audioSink.selectedOptions[0]; ctl('audioSink', { id: refs.audioSink.value, label: o ? o.textContent : '' }); });
-  wrap.append(sec('Output', [
-    h('div', { class: 'flex gap-2.5' }, [refs.projBtn, refs.tvBtn]),
+  wrap.append(sec('Walls', [
+    h('div', { class: 'grid grid-cols-2 gap-x-3' }, [proj, tv]),
+    tvFx,
     h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Audio' }), refs.audioTarget]),
     h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Device' }), refs.audioSink]),
   ]));
@@ -592,37 +600,87 @@ function buildDeck(root) {
       h('button', { class: 'shrink-0 min-h-[42px] px-4 rounded-xl bg-surface-2 border border-line text-[13.5px] font-medium active:bg-accent active:text-black active:border-transparent transition-colors', text: name, onclick: () => ctl('scene', { name }) }))),
   ]));
 
-  // --- layers
+  // --- layers: tap a name to open its controls
   const layerBox = h('div', { class: 'flex flex-col gap-2.5' });
   refs.layerBox = layerBox;
   const layers = st.deck.fx.layers || [];
+  const specOf = (type) => (st.catalog.effects || []).find((e) => e.type === type);
   if (!layers.length) layerBox.append(h('div', { class: CX.hint, text: 'No effects yet — add one below or pick a scene.' }));
   for (const L of layers) {
-    const on = h('button', { class: 'w-10 h-10 rounded-lg border border-line grid place-items-center text-[15px] shrink-0', text: L.on ? '●' : '○', title: 'Show / hide',
-      onclick: () => ctl('layerOn', { id: L.id, on: !refsLayerOn(L.id) }) });
-    on._on = () => on;
+    const open = st.openLayer === L.id;
+    const on = chk('', () => refsLayerOn(L.id), (v) => ctl('layerOn', { id: L.id, on: v }), 'shrink-0 !min-h-0');
     const op = slider('', 0, 1, 0.01, () => layerById(L.id).opacity,
       (v) => { ctl('layerOpacity', { id: L.id, value: v }); return Math.round(v * 100) + '%'; });
     const trig = L.actions.length
       ? h('button', { class: 'w-11 h-10 rounded-lg bg-white/[0.08] border border-white/25 text-white grid place-items-center shrink-0', text: '⚡', title: L.actions[0].label, onclick: () => ctl('triggerLayer', { id: L.id }) })
       : null;
     const del = h('button', { class: 'w-10 h-10 rounded-lg border border-white/18 text-ink-dim grid place-items-center shrink-0', text: '✕', onclick: () => ctl('removeLayer', { id: L.id }) });
-    const row = h('div', { class: 'rounded-xl bg-surface-2/60 border border-line p-2.5 flex flex-col gap-2' }, [
-      h('div', { class: 'flex items-center gap-2.5' }, [on, h('span', { class: 'flex-1 text-[14.5px] font-medium truncate', text: L.name }), trig, del]),
+    const name = h('button', { class: 'flex-1 min-w-0 text-left text-[14.5px] font-medium truncate normal-case', text: (open ? '▾ ' : '▸ ') + L.name,
+      onclick: () => { st.openLayer = open ? null : L.id; deckShape = ''; renderDeck(); } });
+    const kids = [
+      h('div', { class: 'flex items-center gap-2.5' }, [on, name, trig, del]),
       op.row,
-    ]);
-    refs.layers[L.id] = { on, op: op.inp };
-    layerBox.append(row);
-    if (L.actions.length > 1) {
-      layerBox.append(h('div', { class: 'flex flex-wrap gap-2 -mt-0.5' }, L.actions.slice(1).map((a) =>
-        h('button', { class: 'flex-1 min-w-[calc(50%-0.5rem)] min-h-[38px] px-2.5 rounded-lg bg-surface-2 border border-line text-[12.5px]', text: a.label, onclick: () => ctl('layerAction', { id: L.id, name: a.name }) }))));
+    ];
+    const lrefs = { on, op: op.inp, params: {}, chks: [] };
+    if (open) {
+      // walls + colours
+      const wp = chk('Projector', () => layerById(L.id).show.projector, (v) => ctl('layerShow', { id: L.id, wall: 'projector', on: v }));
+      const wt = chk('TV', () => layerById(L.id).show.tv, (v) => ctl('layerShow', { id: L.id, wall: 'tv', on: v }));
+      lrefs.chks.push(wp, wt);
+      kids.push(h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Show on' }), h('div', { class: 'flex gap-4' }, [wp, wt])]));
+      const spec = specOf(L.type);
+      const params = (spec && spec.params) || [];
+      if (params.some((q) => q.type === 'color') && st.catalog.palettes) {
+        const psel = h('select', { class: SEL }, st.catalog.palettes.map(([v, t]) => h('option', { value: v, text: t })));
+        psel.value = L.palette || 'fixed';
+        psel.addEventListener('change', () => ctl('layerPalette', { id: L.id, value: psel.value }));
+        lrefs.palette = psel;
+        kids.push(h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: 'Colours' }), psel]));
+      }
+      if (L.actions.length > 1) {
+        kids.push(h('div', { class: 'flex flex-wrap gap-2' }, L.actions.map((a) =>
+          h('button', { class: 'flex-1 min-w-[calc(50%-0.5rem)] min-h-[38px] px-2.5 rounded-lg bg-surface-2 border border-line text-[12.5px]', text: a.label, onclick: () => ctl('layerAction', { id: L.id, name: a.name }) }))));
+      }
+      // the effect's own parameters
+      for (const q of params) {
+        if (q.key === 'x' || q.key === 'y') continue;          // placed on the Mac, by dragging
+        if (q.type === 'range') {
+          const dec = (q.step || 0.01) >= 1 ? 0 : (q.step || 0.01) >= 0.01 ? 2 : 3;
+          const sl = slider(q.label, q.min, q.max, q.step || 0.01, () => layerById(L.id).params[q.key],
+            (v) => { ctl('layerParam', { id: L.id, key: q.key, value: v }); return Number(v).toFixed(dec); });
+          lrefs.params[q.key] = sl.inp;
+          kids.push(sl.row);
+        } else if (q.type === 'bool') {
+          const c = chk(q.label, () => !!layerById(L.id).params[q.key], (v) => ctl('layerParam', { id: L.id, key: q.key, value: v }));
+          lrefs.chks.push(c);
+          kids.push(c);
+        } else if (q.type === 'select') {
+          const sel = h('select', { class: SEL }, (q.options || []).map(([v, t]) => h('option', { value: v, text: t })));
+          sel.value = layerById(L.id).params[q.key];
+          sel.addEventListener('change', () => ctl('layerParam', { id: L.id, key: q.key, value: sel.value }));
+          lrefs.params[q.key] = sel;
+          kids.push(h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: q.label }), sel]));
+        } else if (q.type === 'text') {
+          const inp = h('input', { type: 'text', class: CX.input });
+          inp.value = layerById(L.id).params[q.key] || '';
+          inp.addEventListener('change', () => ctl('layerParam', { id: L.id, key: q.key, value: inp.value }));
+          lrefs.params[q.key] = inp;
+          kids.push(h('div', { class: 'grid grid-cols-[64px_1fr] items-center gap-3' }, [h('label', { class: CX.ctlLabel, text: q.label }), inp]));
+        }
+      }
+      if (spec && spec.hint) kids.push(h('div', { class: CX.hint, text: spec.hint }));
     }
+    const row = h('div', { class: 'rounded-xl bg-surface-2/60 border border-line p-2.5 flex flex-col gap-2' }, kids);
+    refs.layers[L.id] = lrefs;
+    layerBox.append(row);
   }
   wrap.append(sec('Layers', [layerBox]));
 
-  // --- add effect + clear
+  // --- add effect (grouped) + clear
+  const groups = new Map();
+  for (const e of st.catalog.effects) { if (!groups.has(e.group)) groups.set(e.group, []); groups.get(e.group).push(e); }
   const sel = h('select', { class: SEL + ' flex-1' }, [h('option', { value: '', text: 'Add an effect…' }),
-    ...st.catalog.effects.map((e) => h('option', { value: e.type, text: e.label }))]);
+    ...[...groups.entries()].map(([g, list]) => h('optgroup', { label: g }, list.map((e) => h('option', { value: e.type, text: e.label }))))]);
   sel.addEventListener('change', () => { if (sel.value) { ctl('addLayer', { type: sel.value }); sel.value = ''; } });
   wrap.append(sec(null, [h('div', { class: 'flex gap-2.5 items-center' }, [sel, h('button', { class: BTN + ' shrink-0 !text-ink-dim', text: 'Clear', onclick: () => ctl('clearLayers') })])]));
 
@@ -650,21 +708,22 @@ function updateDeck() {
   if (refs.title) refs.title.textContent = t.title || (t.has ? '' : 'Nothing loaded');
   if (refs.play) refs.play.textContent = t.playing ? '⏸' : '▶';
   if (refs.mute) refs.mute.classList.toggle('muted', !!t.muted);
-  setActive(refs.fxOn, !!d.fx.enabled);
-  setActive(refs.black, !!d.blackout);
+  for (const c of refs.chks || []) syncChk(c);
   for (const L of d.fx.layers || []) {
     const r = refs.layers[L.id]; if (!r) continue;
-    r.on.textContent = L.on ? '●' : '○';
-    r.on.classList.toggle('text-white', L.on); r.on.classList.toggle('text-ink-faint', !L.on);
+    syncChk(r.on);
+    for (const c of r.chks) syncChk(c);
     if (r.op !== active) { r.op.value = L.opacity; r.op._val.textContent = Math.round(L.opacity * 100) + '%'; fillRange(r.op); }
+    if (r.palette && r.palette !== active) r.palette.value = L.palette || 'fixed';
+    for (const [k, inp] of Object.entries(r.params)) {
+      if (inp === active || L.params[k] == null) continue;
+      if (inp.type === 'range') { inp.value = L.params[k]; inp._val.textContent = inp._fmt(Number(inp.value)); fillRange(inp); }
+      else inp.value = L.params[k];
+    }
   }
   const setS = (inp, v) => { if (inp && inp !== active) { inp.value = v; inp._val.textContent = inp._fmt(v); fillRange(inp); } };
   setS(refs.grav, d.fx.gravity); setS(refs.wind, d.fx.wind); setS(refs.time, d.fx.timeScale);
   if (refs.qsel && refs.qsel !== active) refs.qsel.value = d.fx.quality;
-  // outputs + audio
-  const o = d.outputs || {};
-  setActive(refs.projBtn, !!o.projector);
-  setActive(refs.tvBtn, !!o.tv);
   const au = d.audio || {};
   if (refs.audioTarget && refs.audioTarget !== active) refs.audioTarget.value = au.target || 'auto';
   if (refs.audioSink && refs.audioSink !== active) {
@@ -687,7 +746,7 @@ function renderQueue() {
   const d = st.deck;
   if (!d) { root.textContent = ''; root.append(h('div', { class: 'pt-[5rem] px-6 text-center ' + CX.hint, text: 'Waiting for the app…' })); return; }
   const q = d.queue || { items: [], index: -1 };
-  const shape = JSON.stringify([q.items.map((i) => i.i + i.cur), st.library.map((l) => l.id + l.status), st.libFilter]);
+  const shape = JSON.stringify([q.items.map((i) => i.i + i.cur), q.autoDiscover, st.library.map((l) => l.id + l.status), st.libFilter]);
   if (shape === queueShape) { return; }
   queueShape = shape;
   root.innerHTML = '';
@@ -718,7 +777,7 @@ function renderQueue() {
     qbtn('▶', 'brand', () => ctl('playIndex', { index: it.i })),
     qbtn('✕', 'bad', () => ctl('removeIndex', { index: it.i })),
   ]));
-  const disc = h('button', { class: 'shrink-0 min-h-[34px] px-3 rounded-lg border text-[12.5px] font-semibold ' + (q.autoDiscover ? 'bg-accent border-transparent text-white' : 'bg-surface-2 border-line text-ink'), text: 'Auto-discover', onclick: () => ctl('autoDiscover', { on: !q.autoDiscover }) });
+  const disc = chk('Auto-discover', () => !!(st.deck && st.deck.queue && st.deck.queue.autoDiscover), (v) => ctl('autoDiscover', { on: v }), 'shrink-0 text-[13px]');
   wrap.append(h('div', { class: 'rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3' }, [
     h('div', { class: 'flex items-center gap-2' }, [h('div', { class: CX.head + ' flex-1', text: 'Up next · ' + upNext.length }), disc]),
     nextBox,

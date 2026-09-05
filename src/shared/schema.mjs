@@ -101,6 +101,10 @@ export function ensureFx(project) {
     if (l.opacity == null) l.opacity = 1;
     if (!l.params || typeof l.params !== 'object') l.params = {};
     if (!Array.isArray(l.mod)) l.mod = [];
+    // which walls the layer shows on; missing means both
+    if (!l.show || typeof l.show !== 'object') l.show = { projector: true, tv: true };
+    if (l.show.projector == null) l.show.projector = true;
+    if (l.show.tv == null) l.show.tv = true;
   }
   return fx;
 }
@@ -115,6 +119,7 @@ export function defaultFxLayer(type, params, over = {}) {
     params: params || {},
     mod: [],               // [{ p, src, amt, mode }] audio -> parameter
     trig: null,            // { src, action, every } fire an action on the beat
+    show: { projector: true, tv: true },   // which walls carry this layer
     ...over,
   };
 }
@@ -167,7 +172,9 @@ export function defaultState() {
     outputs: {
       // role -> { displayId, enabled, mode }
       projector: { displayId: null, displayLabel: null, enabled: false, mode: 'mapped' },
-      tv: { displayId: null, displayLabel: null, enabled: false, mode: 'fill' },
+      // the TV is a second wall: plain full-screen video with the effects
+      // stack running over it (fx), or a copy of the mapped projector output
+      tv: { displayId: null, displayLabel: null, enabled: false, mode: 'fill', fx: true },
     },
     settings: {
       audioTarget: 'auto',     // auto | tv | projector | control | none

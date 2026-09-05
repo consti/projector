@@ -4,14 +4,24 @@
 
 @layer base {
   html, body { height: 100%; }
-  body { @apply bg-surface-0 text-ink font-sans; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
-  button { -webkit-tap-highlight-color: transparent; }
+  /* DOS text mode: 80x25 blue, a VGA face, no anti-aliased niceties */
+  body { @apply bg-surface-0 text-ink font-sans; -webkit-tap-highlight-color: transparent; overscroll-behavior: none;
+    font-size: 19px; line-height: 1.15; letter-spacing: .01em; -webkit-font-smoothing: none; text-rendering: optimizeSpeed; }
+  button { -webkit-tap-highlight-color: transparent; text-transform: uppercase; }
   select, input, textarea { font: inherit; color: inherit; }
+  select { -webkit-appearance: none; appearance: none; background-image: none; }
+  /* sliders as a text-mode gauge: a track of ░ with a █ thumb */
   input[type=range]{ -webkit-appearance:none; height:32px; background:transparent; width:100%; }
-  input[type=range]::-webkit-slider-runnable-track{ height:2px; border-radius:9999px;
-    background:linear-gradient(#fff,#fff) no-repeat, #333; background-size: var(--fill,50%) 100%, 100% 100%; }
-  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; margin-top:-7px;
-    border-radius:50%; background:#fff; border:0; box-shadow:0 0 0 1px #000; }
+  input[type=range]::-webkit-slider-runnable-track{ height:10px; border-radius:0; border:1px solid #aaaaaa;
+    background:linear-gradient(#55ffff,#55ffff) no-repeat, repeating-linear-gradient(90deg, #000055 0 4px, #0000aa 4px 8px);
+    background-size: var(--fill,50%) 100%, 100% 100%; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:22px; margin-top:-7px;
+    border-radius:0; background:#ffff55; border:1px solid #000000; box-shadow:none; }
+  /* every "border" is a double-line box, the way Turbo Vision drew them */
+  .border, .border-t, .border-b { border-style: double; border-width: 3px; }
+  .border-t { border-width: 3px 0 0 0; }
+  .border-b { border-width: 0 0 3px 0; }
+  ::selection { background: #aaaaaa; color: #0000aa; }
 }
 
 @layer utilities {
@@ -37,18 +47,25 @@ body.aligning #viewSeg { opacity: 0; pointer-events: none; }
 [hidden] { display: none !important; }
 
 /* toast + sheet motion */
-#toast { transition: opacity .22s, transform .3s cubic-bezier(.2,1.2,.4,1); opacity: 0; transform: translate(-50%, -12px); }
+#toast { transition: opacity .1s; opacity: 0; transform: translate(-50%, 0); }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
-#sheet { animation: sheetIn .28s cubic-bezier(.2,.9,.2,1); }
-@keyframes sheetIn { from { transform: translateY(16px); opacity: 0; } }
-.panel-enter { animation: panelIn .3s cubic-bezier(.2,.9,.25,1); }
-@keyframes panelIn { from { opacity: 0; transform: translateY(10px); } }
+#sheet { animation: none; }
+.panel-enter { animation: none; }
 
-/* toggle in settings — greyscale */
-.tgl { position: relative; width: 44px; height: 26px; border-radius: 9999px; background: #26262a; border: 1px solid #38383d; transition: background .2s; flex: none; }
-.tgl::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#9a9a9a; transition: transform .2s cubic-bezier(.2,.9,.2,1), background .2s; }
-input:checked + .tgl { background: #ededed; border-color:#ededed; }
-input:checked + .tgl::after { transform: translateX(18px); background:#0a0a0b; }
+/* toggle in settings: a DOS check box, [ ] and [X] */
+.tgl { position: relative; width: 44px; height: 26px; border-radius: 0; background: #000055; border: 1px solid #aaaaaa; flex: none;
+  font-family: inherit; color: #ffff55; text-align: center; line-height: 24px; }
+.tgl::after { content:'[ ]'; position:static; display:block; width:auto; height:auto; border-radius:0; background:none; transform:none; }
+input:checked + .tgl { background: #000055; border-color:#ffff55; }
+input:checked + .tgl::after { content:'[X]'; transform:none; background:none; }
+
+/* CRT scanlines over everything, and the blinking cursor */
+body::after { content:''; position:fixed; inset:0; z-index:100; pointer-events:none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); mix-blend-mode: multiply; }
+.cursor::after { content:'_'; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+/* drop shadows are hard black offsets, like a dialog over the desktop */
+.backdrop-blur { backdrop-filter: none !important; }
 
 /* mute button: monochrome speaker, slash when muted */
 .muteBtn .mslash { display: none; }

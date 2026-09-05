@@ -24,7 +24,9 @@ export class Stage {
     this.drag = null;
     this.pending = null;                    // in-progress polygon/rect
     this.showHandles = true;
+    this.plain = false;                    // previewing the TV: no areas, masks or handles to edit
     this.previewDim = 1;
+    this.fxDrag = null;                    // dragging an effect's point (light, centre...)
 
     this._bind();
     new ResizeObserver(() => this.layout()).observe(this.view);
@@ -111,7 +113,8 @@ export class Stage {
     x.setTransform(dpr, 0, 0, dpr, 0, 0);
     const W = c.width / dpr, H = c.height / dpr;
     x.clearRect(0, 0, W, H);
-    if (!this.showHandles) { this._info(); return; }
+    this._drawFxPoints(x, W, H);
+    if (!this.showHandles || this.plain) { this._info(); return; }
     const p = this.hooks.project();
     const X = (q) => q[0] * W, Y = (q) => q[1] * H;
 
@@ -182,6 +185,53 @@ export class Stage {
       pts.forEach((q) => this._handle(x, X(q), Y(q), false, '#ffd60a'));
     }
     this._info();
+  }
+
+  // Effect points: a lamp, a vanishing point, the centre of a kaleidoscope.
+  // Drawn as a ringed crosshair with the label of what it is.
+  _drawFxPoints(x, W, H) {
+    const pts = this.hooks.fxPoints ? this.hooks.fxPoints() : null;
+    if (!pts || !pts.length) return;
+    for (const pt of pts) {
+      // a lamp above the frame still needs a handle: pin it to the edge, dashed
+      const cx = Math.max(0.02, Math.min(0.98, pt.x)), cy = Math.max(0.03, Math.min(0.97, pt.y));
+      const outside = cx !== pt.x || cy !== pt.y;
+      const px = cx * W, py = cy * H;
+      const active = this.fxDrag && this.fxDrag.pt.id === pt.id;
+      const col = pt.color || '#ffd60a';
+      x.save();
+      x.shadowColor = 'rgba(0,0,0,.7)'; x.shadowBlur = 4;
+      x.strokeStyle = col; x.lineWidth = active ? 2.2 : 1.6;
+      if (outside) x.setLineDash([3, 3]);
+      x.beginPath(); x.arc(px, py, active ? 11 : 9, 0, Math.PI * 2); x.stroke();
+      x.setLineDash([]);
+      if (outside) {
+        // an arrow towards where the point really is
+        const ax = pt.x - cx, ay = pt.y - cy, m = Math.hypot(ax, ay) || 1;
+        x.beginPath(); x.moveTo(px + (ax / m) * 12, py + (ay / m) * 12); x.lineTo(px + (ax / m) * 22, py + (ay / m) * 22); x.stroke();
+      }
+      x.beginPath();
+      x.moveTo(px - 15, py); x.lineTo(px - 5, py); x.moveTo(px + 5, py); x.lineTo(px + 15, py);
+      x.moveTo(px, py - 15); x.lineTo(px, py - 5); x.moveTo(px, py + 5); x.lineTo(px, py + 15);
+      x.stroke();
+      x.fillStyle = col;
+      x.beginPath(); x.arc(px, py, 2.2, 0, Math.PI * 2); x.fill();
+      x.font = '600 11px -apple-system,sans-serif';
+      x.textAlign = 'left'; x.textBaseline = 'middle';
+      x.fillText(pt.label, px + 14, py - 12);
+      x.restore();
+    }
+  }
+
+  _hitFxPoint(n) {
+    const pts = this.hooks.fxPoints ? this.hooks.fxPoints() : null;
+    if (!pts || !pts.length) return null;
+    const [pw, ph] = this.pxPerNorm();
+    for (const pt of pts) {
+      const cx = Math.max(0.02, Math.min(0.98, pt.x)), cy = Math.max(0.03, Math.min(0.97, pt.y));
+      if (Math.hypot((cx - n[0]) * pw, (cy - n[1]) * ph) <= HIT + 4) return pt;
+    }
+    return null;
   }
 
   _handle(x, px, py, active, col) {
@@ -275,6 +325,17 @@ export class Stage {
     const n = this.toNorm(e);
     const p = this.hooks.project();
 
+    // an effect's point beats everything else: it only shows when that layer is selected
+    const fp = this._hitFxPoint(n);
+    if (fp) {
+      this.fxDrag = { pt: fp, start: n };
+      this.drag = { kind: 'fxpoint' };
+      fp.set(n[0], n[1]);
+      this.draw();
+      return;
+    }
+    if (this.plain) return;
+
     if (this.tool === 'maskPoly') {
       if (!this.pending) this.pending = { kind: 'maskPoly', points: [] };
       const pts = this.pending.points;
@@ -322,6 +383,11 @@ export class Stage {
       return;
     }
     const n = this.hover;
+    if (d.kind === 'fxpoint') {
+      this.fxDrag.pt.set(n[0], n[1]);
+      this.draw();
+      return;
+    }
     if (d.kind === 'pan') {
       this.pan.x = d.px + (e.clientX - d.sx);
       this.pan.y = d.py + (e.clientY - d.sy);
@@ -363,6 +429,7 @@ export class Stage {
     const d = this.drag;
     this.drag = null;
     if (!d) return;
+    if (d.kind === 'fxpoint') { const pt = this.fxDrag.pt; this.fxDrag = null; pt.done?.(); this.draw(); return; }
     if (d.kind === 'rect') {
       const a = d.start, b = d.cur;
       const w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);

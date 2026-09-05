@@ -24,9 +24,9 @@
     <input type="range" id="tVol" min="0" max="100" value="100" style="width:70px">
     <span id="nowTitle" class="hint"></span>
     <span class="grow"></span>
-    <button class="btn" id="oProj" title="Toggle projector output window">Projector</button>
-    <button class="btn" id="oTv" title="Toggle TV output window">TV</button>
-    <button class="btn danger" id="gBlack" title="Blackout (B)">Blackout</button>
+    <label class="tog" id="oProj" title="Projector output window"><input type="checkbox"><span class="sw"></span><span class="tl">Projector</span></label>
+    <label class="tog" id="oTv" title="TV output window"><input type="checkbox"><span class="sw"></span><span class="tl">TV</span></label>
+    <label class="tog danger" id="gBlack" title="Blackout (B)"><input type="checkbox"><span class="sw"></span><span class="tl">Blackout</span></label>
   </div>
 
   <nav id="rail">
@@ -63,8 +63,8 @@
         <button class="btn" id="dupBtn" title="Duplicate (Cmd+D)">Duplicate</button>
         <button class="btn danger" id="delBtn" title="Delete (Backspace)">Delete</button>
         <span style="width:6px"></span>
-        <button class="btn" id="handlesBtn" title="Show handles">Handles</button>
-        <button class="btn" id="guidesBtn" title="Show outlines on the projector itself">Wall guides</button>
+        <label class="tog" id="handlesBtn" title="Show handles"><input type="checkbox" checked><span class="sw"></span><span class="tl">Handles</span></label>
+        <label class="tog" id="guidesBtn" title="Show outlines on the projector itself"><input type="checkbox"><span class="sw"></span><span class="tl">Wall guides</span></label>
         <select id="patSelect" title="Calibration pattern">
           <option value="off">No test pattern</option>
           <option value="grid">Grid</option>
@@ -97,7 +97,8 @@
 
     <!-- EFFECTS view: the big part -->
     <section class="view" id="vEffects" hidden>
-      <div class="viewBody" id="fxHost"></div>
+      <div class="dock left" id="fxHost"></div>
+      <div class="viewBody" id="fxBrowser"></div>
       <div class="dock preview"><div class="previewHead">Live preview</div><div class="stageSlot" data-slot></div><div id="lookHost"></div></div>
     </section>
 
@@ -112,7 +113,7 @@
         <div id="plTools">
           <button class="btn sm" id="plSave" title="Save this playlist">Save list</button>
           <select id="plLoad" title="Load a saved playlist"><option value="">Playlists…</option></select>
-          <button class="btn sm" id="plDiscover" title="Keep discovering related videos and playing">Auto-discover</button>
+          <label class="tog" id="plDiscover" title="Keep discovering related videos and playing"><input type="checkbox"><span class="sw"></span><span class="tl">Auto-discover</span></label>
         </div>
         <div id="plInfo" class="hint"></div>
         <div id="plWrap">

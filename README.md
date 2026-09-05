@@ -2,8 +2,8 @@
 
 Projection-mapping video player for macOS. Plays local files or YouTube
 links/playlists, warps the picture onto one or more wall areas independently,
-blacks out shapes you mark (paintings, plant, couch), and can mirror the same
-video full-screen on your TV.
+blacks out shapes you mark (paintings, plant, couch), and plays the same video
+full-screen on your TV as a second wall, with the effects running there too.
 
 It also runs a **real-time physics and simulation layer on top of the video** —
 water that fills the room and flows around your couch, balls that bounce off
@@ -79,7 +79,45 @@ by whatever is running on top of it.
 
 Add layers from the dropdown, or start from one of the **Scenes** (Flood the
 room, Aquarium, Ball pit, Storm, Inferno, Break the picture, Overgrown, Event
-horizon …). Layers stack bottom-to-top and each has its own opacity.
+horizon, Falling into itself, Vaporwave …). Layers stack bottom-to-top and each
+has its own opacity. The *Trippy* and *Retro* groups are whole-picture shaders
+rather than simulations: they fold, tile and feed the video back into itself.
+The *Shapes* group works on the shapes you masked instead: each mask has an
+**Effects see this shape** toggle, and the ones that are on cast shadows, stand
+off the wall as blocks, are swept by stage lights, or get traced in neon. The
+*Look* group re-renders the whole picture: print, text, 8-bit, paint, thermal,
+glass.
+
+### The Effects screen
+
+The middle of the Effects view is a catalogue: every effect as a card with a
+captured thumbnail, searchable and filtered by group, with the scenes along the
+top. Click a card to add it to the stack on the left, where each layer's
+parameters, actions and sound links live. The preview sits on the right with
+the world, camera, look and sound controls under it. **Hover the preview** and
+it grows over the view so you can watch the wall while you work; the
+*Projector / TV* switch in its header shows either wall.
+
+Each layer has three more choices beyond its parameters:
+
+- **Show on** — which walls carry it: the projector, the TV, or both.
+- **Colours** — for effects with colour swatches, take the colours from the
+  video instead: *From the video* uses its dominant hues, *Complement* the
+  opposite hues, *Invert* the negative, *Match the tone* its average. A few
+  hundred pixels of the live picture are sampled every few frames and eased,
+  so a cut does not flash.
+- **Shapes** — which of the masked shapes this layer sees. A lamp can throw
+  shadows from the paintings only while the aura ripples out of the couch; a
+  layer that sees a subset gets its own distance field.
+
+Any effect that has a position (a lamp, a vanishing point, the centre of a
+kaleidoscope, a smoke nozzle) shows a **crosshair handle on the preview** while
+its layer is selected. Drag it to place the light or the centre instead of
+working two sliders; dragging turns off "follow the pointer" for that layer.
+
+The thumbnails are captured from the running app with
+`node scripts/fx-thumbs.mjs` (start the app with `--remote-debugging-port=9222`
+and a video playing); rerun it after adding or changing an effect.
 
 | | |
 | --- | --- |
@@ -87,12 +125,12 @@ horizon …). Layers stack bottom-to-top and each has its own opacity.
 | **Falling shapes** | Squares, triangles, pentagons, hexagons, stars, flowers and discs as real convex bodies, so they land on a flat side and stack. Bevelled and lit as solid slabs. |
 | **Emoji rain** | Whatever emoji you type, dropped into the room as rigid bodies. Presets for party, food, nature, space, sport, hearts and weather, or type your own. |
 | **Water** | A genuinely incompressible liquid (Clavet double-density relaxation over a few thousand particles). It pours in, finds a level, sloshes, splashes, and its surface is reconstructed as a metaball meniscus that refracts and tints the video by depth. |
-| **Smoke** | Buoyant plume from a Eulerian solver with vorticity confinement, self-shadowed, and it blurs the picture behind it. |
+| **Smoke** | Buoyant plume from a Eulerian solver with vorticity confinement, self-shadowed, and it blurs the picture behind it. The dye is reconstructed with a bicubic filter and its thin edges eaten by fine noise, so the grid never shows; a **Resolution** control trades solver size for detail. |
 | **Fire** | Same solver with a temperature channel, a blackbody colour ramp, soot that outlives the flame, and firelight spilling onto the wall. |
 | **Ink / paint** | Heavy pigment that sinks, pools on ledges and stains the picture. Multicolour option. |
 | **Snow** | Flakes drift on a curl-noise wind, collide, and where they land on an up-facing surface they are baked into a depth field — so drifts grow on the top edge of every painting while the film plays, and melt back if you ask. |
 | **Rain** | Angled streaks, splash crowns where they land, and a wet sheen that darkens and distorts the wall before it dries. |
-| **Sand** | Real granular discs with Coulomb friction: pours, avalanches, holds a slope. |
+| **Sand** | A falling-sand automaton on the GPU: half a million cells, each grain two pixels wide. A thin trickle pours in (one stream, three, a curtain along the top, or from the pointer), rolls down the slopes at a real angle of repose and heaps on the floor and on every shape; your hand (pointer or camera) is a solid the sand flows around. Every grain picks its own side to slide to, and a grain already moving keeps rolling, so avalanches run instead of stacking into a pillar. A drain through the floor is optional. |
 | **Ripples** | A damped wave equation across the whole wall. Waves reflect off your shapes and bend the picture as they pass. |
 | **Shatter** | A Voronoi crack pattern cuts the frame into shards; each becomes a rigid body but keeps the texture coordinates it had at rest, so it carries its piece of the *live* video down with it. Set **Put it back after** and the picture returns on its own — fading in, through opening doors, a wipe, an iris, or by flying every shard back into place. |
 | **Bubbles** | Soap bubbles rise, roll along the underside of shapes and pop, with thin-film iridescence and refraction. |
@@ -102,7 +140,157 @@ horizon …). Layers stack bottom-to-top and each has its own opacity.
 | **Lightning** | Branching arcs that earth themselves on the nearest shape, with a flash on the wall. |
 | **Aurora** | Slow folding curtains of domain-warped light, occluded by your shapes. |
 | **Gravity well** | Bends the video around a point, with an accretion disc and a photon ring. |
-| **Vines** | Space-colonisation growth that fills the open wall between your shapes and leafs out. |
+| **Vines** | Space-colonisation growth that fills the open wall between your shapes and leafs out, with flowers at the tips. The roots look for open wall, so a creeper asked to start at the floor climbs out of the top of a couch you have masked across the bottom instead of dying inside it. Stem thickness follows the pipe model (a stem is as thick as the square root of the growth it carries); when the wall is full the plant withers and grows again. |
+| **Kaleidoscope** | The picture mirrored into a turning wheel of wedges, with twist, breathing zoom and colour drift. |
+| **Droste spiral** | Escher's *Print Gallery* transform: a ring of the frame repeats at every scale and, twisted, winds into a spiral, so the video falls endlessly into itself. |
+| **Video feedback** | A camera pointed at its own monitor: the last frame is zoomed, turned and hue-shifted back under the live picture, receding down an infinite corridor. |
+| **Tessellation** | One cell of the picture mirrored across a square, hexagonal, triangular or diamond lattice, seamless like a wallpaper group. |
+| **Circle limit** | Escher's hyperbolic tiling: a {p,q} tessellation of the Poincaré disc found by folding every pixel into the fundamental triangle, with a Möbius slide across the disc. |
+| **Tunnel** | The picture wrapped round the inside of an endless round, square or star-shaped tunnel you fly down. |
+| **Acid** | A slow noise domain-warp that melts the picture while its colours cycle, with colour separation and neon edges. |
+| **Synthwave** | A neon grid floor rushing to the horizon, the picture in the sky over a striped sun, pink-and-cyan grade, stars and scanlines. |
+| **VHS tape** | Tracking bands, chroma bleed, line jitter, dropouts, head-switching noise and a curved tube. |
+| **Glitch** | Torn slices, displaced and pixelated blocks and split channels, in random bursts or fired on the beat. |
+| **Mirror & swirl** | The picture reflected through the middle (left onto right, top onto bottom, or four ways) with a swirl and waves on top. |
+| **Room** | The wall opens into a box: floor, ceiling, side walls and a back wall in true perspective, each carrying the picture. The vanishing point follows the pointer, so the illusion shifts as you move. |
+| **Burn** | Holes catch and spread like film in a hot projector: charred rims, a glowing front, embers and heat shimmer, until the whole picture has burnt away; then it comes back. |
+| **Tetris** | Tetrominoes drop into a grid over the picture, steer themselves to the best fit, lock and clear full rows. Masked shapes are solid cells, so the pieces pile on your paintings. Glass tiles with the video showing through. |
+| **Shadows** | A lamp in front of the wall makes every masked shape cast a soft shadow, with a warm pool of light around the lamp. The penumbra is a real one — sharp where the shape meets the wall, wide where the shadow is thrown far, with a little light creeping in around the caster and a contact shadow at the base — rather than a stack of hard cut-outs. Move the pointer and the shadows swing with it. |
+| **Blocks** | The masked shapes stand off the wall as solid blocks: lit side faces, a highlight along the top edge and a contact shadow at the base, all in perspective from a movable vanishing point. |
+| **Aura** | Neon contour waves ripple outwards from every shape along its true distance field, and the picture bulges away from the outlines. Breathing and silhouette growth are there if you want them, off by default. |
+| **Field lines** | Lines of force radiate from every shape like a magnetic field, twisted as they travel out, with pulses of light running along them and the picture swept around the outlines. |
+| **Shockwave** | A ring bursts out of every shape and runs across the wall, bending the picture and splitting its colours as it passes, with a lit crest and a shaded trough. Fire it by hand, on a timer, or on the beat. |
+| **Glass rim** | Every shape is set behind a thick bevelled pane of glass: the picture refracts through the quarter-round bevel, the rim catches the light, a caustic line glows where the glass meets the wall. Frosted if you like. |
+| **Plasma edge** | Electric tendrils crawl along every outline and reach out across the wall, flickering like a plasma globe, with a hot core and a coloured halo. |
+| **Frost** | Ice creeps out of every shape in feathered crystals, frosts and blurs the picture over, holds, melts back with a glistening edge, and grows again. |
+| **Contour map** | The wall as a height map with your shapes as the peaks: bands of colour by distance, contour lines between them, all drifting outwards, with the picture showing through as the shading. |
+| **Stage lights** | Coloured spotlights on a rail above the wall sweep their beams across it; every shape throws a moving shadow from each. Beam haze, colours and rail height are yours. |
+| **Neon outlines** | Every masked shape traced by a glowing tube with a light chasing along it and a little mains flicker; an inner tube and the picture's own edges optional. |
+| **Flip tiles** | The picture cut into tiles that turn over in waves from the centre, diagonally or at random, showing a recoloured copy on their backs. |
+| **Liquid metal** | A pool of mercury on the wall: a slow height field whose surface reflects the picture with hard highlights. |
+| **Halftone print** | CMYK dot screens at their classic angles, or a one-ink comic with outlines, on paper. |
+| **Text mode** | The picture typed out in characters from a glyph atlas sorted by ink coverage, in the video's own colours or on a green phosphor. |
+| **8-bit** | Chunky pixels snapped to a PICO-8, NES, C64, Game Boy, ZX Spectrum or CGA palette with ordered dither, on a curved tube. |
+| **Oil paint** | A Kuwahara filter flattens detail into brush-like patches that keep their edges, on a woven canvas. |
+| **Thermal camera** | False colour by brightness: an iron heat palette, rainbow, green night vision or a Predator-style edge view. |
+| **Stained glass** | The picture leaded into Voronoi glass panes, each one colour, the light shifting across them. |
+
+### Every effect
+
+<!-- gallery:start -->
+
+**Physics**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/balls.jpg" width="220" alt="Falling balls"><br><sub>Falling balls</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/shapes.jpg" width="220" alt="Falling shapes"><br><sub>Falling shapes</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/emoji.jpg" width="220" alt="Emoji rain"><br><sub>Emoji rain</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/sand.jpg" width="220" alt="Sand"><br><sub>Sand</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/shatter.jpg" width="220" alt="Shatter"><br><sub>Shatter</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/bubbles.jpg" width="220" alt="Bubbles"><br><sub>Bubbles</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/goo.jpg" width="220" alt="Goo"><br><sub>Goo</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/tetris.jpg" width="220" alt="Tetris"><br><sub>Tetris</sub></td>
+</tr></table>
+
+**Fluid**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/water.jpg" width="220" alt="Water"><br><sub>Water</sub></td>
+</tr></table>
+
+**Weather**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/snow.jpg" width="220" alt="Snow"><br><sub>Snow</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/rain.jpg" width="220" alt="Rain"><br><sub>Rain</sub></td>
+</tr></table>
+
+**Water**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/ripples.jpg" width="220" alt="Ripples"><br><sub>Ripples</sub></td>
+</tr></table>
+
+**Particles**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/confetti.jpg" width="220" alt="Confetti"><br><sub>Confetti</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/fireflies.jpg" width="220" alt="Fireflies"><br><sub>Fireflies</sub></td>
+</tr></table>
+
+**Energy**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/lightning.jpg" width="220" alt="Lightning"><br><sub>Lightning</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/aurora.jpg" width="220" alt="Aurora"><br><sub>Aurora</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/blackhole.jpg" width="220" alt="Gravity well"><br><sub>Gravity well</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/burn.jpg" width="220" alt="Burn"><br><sub>Burn</sub></td>
+</tr></table>
+
+**Growth**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/vines.jpg" width="220" alt="Vines"><br><sub>Vines</sub></td>
+</tr></table>
+
+**Trippy**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/kaleido.jpg" width="220" alt="Kaleidoscope"><br><sub>Kaleidoscope</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/droste.jpg" width="220" alt="Droste spiral"><br><sub>Droste spiral</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/feedback.jpg" width="220" alt="Video feedback"><br><sub>Video feedback</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/tessellate.jpg" width="220" alt="Tessellation"><br><sub>Tessellation</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/hyperbolic.jpg" width="220" alt="Circle limit"><br><sub>Circle limit</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/tunnel.jpg" width="220" alt="Tunnel"><br><sub>Tunnel</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/acid.jpg" width="220" alt="Acid"><br><sub>Acid</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/mirror.jpg" width="220" alt="Mirror & swirl"><br><sub>Mirror & swirl</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/room.jpg" width="220" alt="Room"><br><sub>Room</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/fliptiles.jpg" width="220" alt="Flip tiles"><br><sub>Flip tiles</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/chrome.jpg" width="220" alt="Liquid metal"><br><sub>Liquid metal</sub></td>
+</tr></table>
+
+**Retro**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/synthwave.jpg" width="220" alt="Synthwave"><br><sub>Synthwave</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/vhs.jpg" width="220" alt="VHS tape"><br><sub>VHS tape</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/glitch.jpg" width="220" alt="Glitch"><br><sub>Glitch</sub></td>
+</tr></table>
+
+**Look**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/halftone.jpg" width="220" alt="Halftone print"><br><sub>Halftone print</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/ascii.jpg" width="220" alt="Text mode"><br><sub>Text mode</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/eightbit.jpg" width="220" alt="8-bit"><br><sub>8-bit</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/painterly.jpg" width="220" alt="Oil paint"><br><sub>Oil paint</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/thermal.jpg" width="220" alt="Thermal camera"><br><sub>Thermal camera</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/stainedglass.jpg" width="220" alt="Stained glass"><br><sub>Stained glass</sub></td>
+</tr></table>
+
+**Shapes**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/shadows.jpg" width="220" alt="Shadows"><br><sub>Shadows</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/extrude.jpg" width="220" alt="Blocks"><br><sub>Blocks</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/aura.jpg" width="220" alt="Aura"><br><sub>Aura</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/fieldlines.jpg" width="220" alt="Field lines"><br><sub>Field lines</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/shockwave.jpg" width="220" alt="Shockwave"><br><sub>Shockwave</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/glassrim.jpg" width="220" alt="Glass rim"><br><sub>Glass rim</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/plasma.jpg" width="220" alt="Plasma edge"><br><sub>Plasma edge</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/frost.jpg" width="220" alt="Frost"><br><sub>Frost</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/contour.jpg" width="220" alt="Contour map"><br><sub>Contour map</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/stagelights.jpg" width="220" alt="Stage lights"><br><sub>Stage lights</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/neon.jpg" width="220" alt="Neon outlines"><br><sub>Neon outlines</sub></td>
+</tr></table>
+
+<!-- gallery:end -->
 
 ### How it fits together
 
@@ -258,6 +446,13 @@ curated, cropped library travels as one small file.
 
 ## Phone camera (people push the effects)
 
+The phone page is styled as a DOS text-mode program: the 16-colour palette, a
+VGA face, double-line boxes, hard black shadows and scanlines. It is a
+network-first PWA whose shell cache is versioned, so a phone picks the new look
+up on its next load; if it does not, you are probably still running the old
+packaged `.app`, which serves its own copy of the page. Rebuild with
+`npm run build`.
+
 The Continuity Camera path above differences frames on the Mac. The phone path
 does better: the phone runs a body tracker on its own camera and only sends
 where people are, so the projector reacts to arms and hands, not just to
@@ -289,17 +484,30 @@ phone's settings sheet). By default the phone loads it from the internet the
 first time; run `npm run fetch-models` to bundle it into `assets/mediapipe/`
 and the app serves it itself, for venues without internet.
 
+The phone's **Mixer** tab is a full remote for the effects: walls, effects on
+the TV, scenes, and every layer — tap a layer's name and its own sliders,
+switches and menus unfold, along with which walls it shows on and where it takes
+its colours from. The catalogue for adding an effect is grouped the way the
+Mac's is. The **Queue** tab shows what is playing with a live picture of the
+wall, what is up next, and the library.
+
 Landmarks travel as JSON over a WebSocket at 30 Hz — a few kilobytes a second —
 and the app maps them through the homography into output space, differences
 successive packets for velocity, and hands the result to the same interactor
 path the pointer uses. Several phones can be connected at once; they all push.
 
-## Outputs
+## Outputs — two walls
 
 | Role | What it does |
 | --- | --- |
-| Projector | Full mapped output: areas, warps and masks |
-| TV | Same video plain and full-screen (contain / cover / stretch), or the mapped output |
+| Projector | Full mapped output: areas, warps and masks, with the effects running over the picture and around your shapes |
+| TV | The same video plain and full-screen (contain / cover / stretch) **with the same effects running over it** — its own simulation, in its own aspect, with no masked shapes, only the edges of its frame — or a copy of the mapped output |
+
+The TV is a second wall rather than a mirror. *Effects on the TV* in Setup
+turns its stack on and off; each effect layer chooses which walls it shows on
+(*Show on* in the Effects view), so the water can flood the projector wall
+while the TV only carries the kaleidoscope. The live preview's *Projector / TV*
+switch shows what each wall is getting.
 
 Each role is pinned to a screen by id *and* name, so a reconnect that renumbers
 the displays does not silently send the projector feed to the TV. On first run
@@ -332,6 +540,13 @@ Both windows derive their playback time from one shared wall clock and nudge
 their own playback rate to stay within ~35 ms, so the two screens stay together
 without one driving the other. Choose which screen carries the audio under
 **Audio from**.
+
+## Booleans are switches
+
+Anything on/off in the app is a switch (or a check box in a list), never a
+button that happens to be lit: outputs and blackout in the top bar, handles and
+wall guides in the tool bar, every toggle in the panels, the visibility of each
+layer and mask. The phone shows the same things as `[ ]` / `[X]` check boxes.
 
 ## Keys
 

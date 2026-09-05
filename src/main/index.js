@@ -286,7 +286,13 @@ setInterval(() => {
   const trim = t.source.trim;
   const start = trim && trim.start ? trim.start : 0;
   const end = trim && trim.end ? trim.end : 0;
-  if (end && now >= end - 0.15) { onEnded(); return; }
+  if (end && now >= end - 0.15) { endedOnce(); return; }
+  // The windows report 'ended' from their own <video>, but only the window that
+  // carries the clock is trusted to, and there may be none open at all (the
+  // control preview alone, or a TV with no display assigned). The shared clock
+  // knows when the track is over regardless, so it is the fallback: without
+  // it the picture sat at the last frame being re-seeked forever.
+  if (t.duration > 1 && now >= t.duration + 0.6) { endedOnce(); return; }
   const skips = t.source.sponsorSkips;
   if (skips) {
     for (const s of skips) {
@@ -399,7 +405,15 @@ function advance(dir = 1) {
   loadIndex(pl.index + dir, true);
 }
 
-// A track finished on its own.
+// A track finished on its own. Every window's <video> fires 'ended' and the
+// clock watchdog may fire too, so the transition is debounced here.
+let lastEnded = 0;
+function endedOnce() {
+  if (Date.now() - lastEnded < 1500) return;
+  lastEnded = Date.now();
+  onEnded();
+}
+
 function onEnded() {
   const pl = state.playlist;
   const n = pl.items.length;
@@ -1179,13 +1193,7 @@ function ipc() {
     }
     return true;
   });
-  let lastEnded = 0;
-  ipcMain.handle('transport:ended', () => {
-    if (Date.now() - lastEnded < 1500) return true;
-    lastEnded = Date.now();
-    onEnded();
-    return true;
-  });
+  ipcMain.handle('transport:ended', () => { endedOnce(); return true; });
 
   ipcMain.handle('playlist:addFiles', async () => {
     const r = await dialog.showOpenDialog(control, {

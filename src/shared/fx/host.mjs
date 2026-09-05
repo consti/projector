@@ -2,7 +2,7 @@
 // first use, keeps it in step with the project, and drives it off the wall
 // clock so the control preview and the projector show the same weather.
 
-import { FxSystem } from './system.mjs';
+import { FxSystem, layerOnWall } from './system.mjs';
 import { AudioReactor, EMPTY as AUDIO_EMPTY } from './audio.mjs';
 import { defaultFx, ensureFx } from '../schema.mjs';
 
@@ -68,7 +68,12 @@ export class FxHost {
     const fx = fxConfig(project);
     this.outgoingAudio = this._audio(fx, opts);
 
-    const wanted = !!fx.enabled && (fx.layers || []).length > 0
+    // opts.wall: which wall this window draws ('projector' by default, 'tv'
+    // for the TV output or the TV preview); opts.off: this wall has effects
+    // switched off; opts.aspect / opts.shapes are passed to the system.
+    const wall = opts.wall || 'projector';
+    const wanted = !!fx.enabled && !opts.off
+      && (fx.layers || []).some((l) => l.enabled !== false && layerOnWall(l, wall))
       && (this.role !== 'control' || fx.preview !== false);
 
     if (!wanted) {
@@ -93,7 +98,7 @@ export class FxHost {
       }
     }
     try {
-      this.system.sync(project, fx);
+      this.system.sync(project, fx, { wall, aspect: opts.aspect, shapes: opts.shapes });
       this.system.setInteractors(this.interactors);
       this.system.setAudio(this.audio);
       const paused = fx.pauseWithVideo && opts.playing === false;

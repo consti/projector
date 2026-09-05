@@ -12,6 +12,7 @@ precision highp float;
 #include <common>
 #include <hash>
 #include <noise>
+#include <bicubic>
 in vec2 vUV;
 uniform sampler2D uBg;
 uniform sampler2D uDye;
@@ -27,7 +28,8 @@ uniform float uOpacity;
 uniform float uAspect;
 out vec4 o;
 
-float dens(vec2 uv){ return texture(uDye, uv).a; }
+float dens(vec2 uv){ return texBicubic(uDye, uv, uTexel).a; }
+float densCheap(vec2 uv){ return texture(uDye, uv).a; }
 
 void main(){
   // Detail comes from warping the *lookup* rather than modulating the result,
@@ -40,6 +42,11 @@ void main(){
   }
   float d = dens(uv);
   float a = 1.0 - exp(-d * uDensity);
+  // fine wisps: the thin edge of the plume is eaten away by small-scale noise
+  if (uDetail > 0.0) {
+    float n = fbm(vUV * vec2(34.0, 34.0 * uAspect) + vec2(uTime * 0.2, -uTime * 0.45), 3);
+    a *= smoothstep(0.0, 0.18 + 0.3 * uDetail, a + (n - 0.5) * 0.35 * uDetail);
+  }
   // a 'post' layer owns every pixel of its target, so pass the picture through
   if (a < 0.003) { o = vec4(texture(uBg, vUV).rgb, 1.0); return; }
 
@@ -47,7 +54,7 @@ void main(){
   float occl = 0.0;
   vec2 stepv = normalize(uLight + 1e-5) * uTexel * 3.0;
   vec2 sp = uv;
-  for (int i = 0; i < 6; i++) { sp += stepv; occl += dens(sp); }
+  for (int i = 0; i < 6; i++) { sp += stepv; occl += densCheap(sp); }
   occl = 1.0 - exp(-occl * uDensity * 0.32);
   vec3 col = mix(uColor, uShadow, sat(occl));
 
@@ -75,6 +82,7 @@ precision highp float;
 #include <common>
 #include <hash>
 #include <noise>
+#include <bicubic>
 in vec2 vUV;
 uniform sampler2D uBg;
 uniform sampler2D uDye;
@@ -96,9 +104,14 @@ void main(){
     vec2 w2 = curl(vUV * vec2(26.0, 26.0 * uAspect) + vec2(2.3, -uTime * 1.7), 0.02);
     uv += (w1 * 0.8 + w2 * 0.4) * uDetail * 0.014;
   }
-  vec4 dye = texture(uDye, uv);
+  vec4 dye = texBicubic(uDye, uv, uTexel);
   float heat = dye.b;
   float soot = dye.a;
+  // flame tongues: fine noise licks at the cooler edge
+  if (uDetail > 0.0) {
+    float n = fbm(vUV * vec2(30.0, 30.0 * uAspect) - vec2(0.0, uTime * 2.2), 3);
+    heat *= 0.85 + 0.45 * (n - 0.5) * uDetail + 0.15 * uDetail;
+  }
   float t = sat(heat * uDensity);
   // blackbody-ish ramp: deep red -> orange -> yellow -> white
   vec3 fire = mix(vec3(0.0), uCool, smoothstep(0.02, 0.30, t));
@@ -118,16 +131,28 @@ void main(){
 const INK_FS = `#version 300 es
 precision highp float;
 #include <common>
+#include <hash>
+#include <noise>
+#include <bicubic>
 in vec2 vUV;
 uniform sampler2D uBg;
 uniform sampler2D uDye;
+uniform vec2 uTexel;
 uniform float uDensity;
 uniform float uOpacity;
 uniform float uGlow;
+uniform float uDetail;
+uniform float uTime;
+uniform float uAspect;
 out vec4 o;
 void main(){
-  vec4 dye = texture(uDye, vUV);
+  vec4 dye = texBicubic(uDye, vUV, uTexel);
   float a = 1.0 - exp(-dye.a * uDensity);
+  // pigment edges: a fine granular fringe where the ink thins out
+  if (uDetail > 0.0) {
+    float n = fbm(vUV * vec2(60.0, 60.0 * uAspect), 3);
+    a = smoothstep(0.0, 0.5, a + (n - 0.5) * 0.45 * uDetail) * sat(a * 3.0);
+  }
   vec3 c = dye.a > 1e-4 ? dye.rgb / max(dye.a, 1e-4) : vec3(0.0);
   vec3 bg = texture(uBg, vUV).rgb;
   // pigment absorbs: multiply, then a touch of emission so it stays readable
@@ -139,14 +164,16 @@ function gasFactory(kind) {
   return (ctx) => {
     const gl = ctx.gl;
     const rng = ctx.rng;
-    const grid = ctx.quality.grid;
+    const baseGrid = ctx.quality.grid;
+    let grid = baseGrid;
     let fluid = null;
     const fsSrc = kind === 'fire' ? FIRE_FS : kind === 'ink' ? INK_FS : SMOKE_FS;
     const pr = prog(gl, VS_SCREEN, fsSrc);
     const c1 = [0, 0, 0], c2 = [0, 0, 0];
     let inkPhase = 0;
 
-    const ensure = (aspect) => {
+    const ensure = (aspect, res) => {
+      if (res) grid = Math.round(baseGrid * res);
       const h = Math.max(16, Math.round(grid * aspect));
       if (!fluid) fluid = new Fluid(gl, ctx.screen, grid, h, aspect);
       else fluid.resize(grid, h, aspect);
@@ -175,7 +202,7 @@ function gasFactory(kind) {
       },
 
       step(dt, w, p) {
-        const f = ensure(w.aspect);
+        const f = ensure(w.aspect, p.res || 1);
         const sdf = w.sdfTex;
         if (!sdf) return;
 
@@ -296,6 +323,7 @@ export const smoke = {
     R('curl', 'Swirl', 2.2, 0, 8),
     R('turbulence', 'Turbulence', 0.6, 0, 4),
     R('dissipate', 'Fade', 0.45, 0, 2),
+    R('res', 'Resolution', 1.25, 0.5, 2.5, 0.25),
     R('detail', 'Detail', 0.5, 0, 1),
     R('blurBehind', 'Blur the video', 0.6, 0, 1),
     R('lightAngle', 'Light angle', 250, 0, 360, 1),
@@ -325,6 +353,7 @@ export const fire = {
     R('turbulence', 'Turbulence', 0.7, 0, 4),
     R('coolRate', 'Cooling', 5, 0.5, 14),
     R('smokeFade', 'Smoke fade', 0.5, 0.02, 4),
+    R('res', 'Resolution', 1.25, 0.5, 2.5, 0.25),
     R('detail', 'Detail', 0.7, 0, 1),
     R('wind', 'Draught', 0, -2, 2),
     B('interactEmit', 'Pointer ignites', false),
@@ -350,7 +379,9 @@ export const ink = {
     R('sink', 'Weight', 0.6, 0, 3),
     R('curl', 'Swirl', 1.2, 0, 8),
     R('turbulence', 'Turbulence', 0.35, 0, 4),
+    R('res', 'Resolution', 1.75, 0.5, 2.5, 0.25),
     R('dissipate', 'Fade', 0.05, 0, 1),
+    R('detail', 'Edge grain', 0.5, 0, 1),
     R('wind', 'Drift', 0, -2, 2),
     B('interactEmit', 'Pointer paints', false),
   ],

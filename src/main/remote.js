@@ -21,8 +21,8 @@ const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // A tiny network-first service worker so the remote installs to the home screen
 // and launches even before the LAN reconnects. It never caches the models/wasm.
-const SERVICE_WORKER = `const C='pj-shell-v1';
-const SHELL=['/','/remote/remote.css','/remote/remote.mjs','/shared/pose.mjs','/manifest.webmanifest'];
+const SERVICE_WORKER = `const C='pj-shell-v4';
+const SHELL=['/','/remote/tw.css','/remote/remote.mjs','/shared/pose.mjs','/manifest.webmanifest'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(SHELL).catch(()=>{})))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.map(k=>k!==C&&caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{const u=new URL(e.request.url);
