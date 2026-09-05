@@ -91,8 +91,8 @@ glass.
 ### The Effects screen
 
 The middle of the Effects view is a catalogue: every effect as a card with a
-captured thumbnail, searchable and filtered by group, with the scenes along the
-top. Click a card to add it to the stack on the left, where each layer's
+captured thumbnail — **hover a card and it plays a short clip** of the effect in
+motion — searchable and filtered by group, with the scenes along the top. Click a card to add it to the stack on the left, where each layer's
 parameters, actions and sound links live. The preview sits on the right with
 the world, camera, look and sound controls under it. **Hover the preview** and
 it grows over the view so you can watch the wall while you work; the
@@ -115,9 +115,18 @@ kaleidoscope, a smoke nozzle) shows a **crosshair handle on the preview** while
 its layer is selected. Drag it to place the light or the centre instead of
 working two sliders; dragging turns off "follow the pointer" for that layer.
 
-The thumbnails are captured from the running app with
+**Sets** keep the catalogue short. Pick *+ New set…* in the Set menu, name it,
+and tick the effects that belong in it; from then on the catalogue (and the
+phone's effect picker) shows only that set and the scenes it can build. *Edit
+set* brings every effect back with a check box per card, so you can still browse
+everything while you choose; *All effects* switches the set off. Sets are saved
+with the app's settings.
+
+The thumbnails and clips are captured from the running app with
 `node scripts/fx-thumbs.mjs` (start the app with `--remote-debugging-port=9222`
-and a video playing); rerun it after adding or changing an effect.
+and a video playing; `--no-clips` skips the recordings); rerun it after adding
+or changing an effect, then `node scripts/readme-gallery.mjs` to refresh the
+gallery below.
 
 | | |
 | --- | --- |
@@ -164,6 +173,39 @@ and a video playing); rerun it after adding or changing an effect.
 | **Plasma edge** | Electric tendrils crawl along every outline and reach out across the wall, flickering like a plasma globe, with a hot core and a coloured halo. |
 | **Frost** | Ice creeps out of every shape in feathered crystals, frosts and blurs the picture over, holds, melts back with a glistening edge, and grows again. |
 | **Contour map** | The wall as a height map with your shapes as the peaks: bands of colour by distance, contour lines between them, all drifting outwards, with the picture showing through as the shading. |
+
+The **Generative** group runs the picture through the kind of systems that
+drive Max Cooper's videos — reaction-diffusion and emergent life (*Order From
+Chaos*, *Origins*), circle symmetry operations (*Symmetry*), duplicated built
+form receding for ever (*Repetition*), the infinite zoom (*Aleph 2*), crowds as
+geometry, transcendental digits and aperiodic tilings (*Perpetual Motion*),
+dividing cellular forms, wave interference, weaving, tree maps:
+
+| | |
+| --- | --- |
+| **Reaction diffusion** | Gray–Scott on the GPU, seeded by the picture's highlights: coral, spots, worms, waves or mitosis grow over the film and eat into it, as a tinted membrane, a refracting layer or an emboss. |
+| **Game of Life** | Conway's Life over the picture, seeded from its edges and re-fed by movement, with glowing trails where cells lived. |
+| **Rule 110** | An elementary cellular automaton (110, 30, 90, 184 …) pours down the wall from a seed row read off the top of the picture. |
+| **Coral growth** | Cells spread from the shapes and the floor into the picture's shadows, so coral fills the dark of the film and leaves the light alone; then it dies back. |
+| **Symmetry** | The picture cut into a grid of circles; each carries a rotated, reflected copy, and the operations sweep across the grid in waves. |
+| **Sprawl** | The picture duplicates into 2×2, 4×4, 8×8 … copies receding for ever as the camera pulls back, mirrored so the seams meet. |
+| **Aleph** | The picture inside itself inside itself, each level turned a little, the camera falling inwards for ever; the centre follows the pointer. |
+| **Point cloud** | The picture as a field of dots lifted off the wall by their brightness, seen from a camera that drifts, so bright dots slide over dark ones. |
+| **Network** | Points wander over the wall and join their neighbours with lines when they come close: a living network diagram over the film. |
+| **Digits** | The picture typed out as seven-segment digits, each cell's digit its brightness: the wall as a transcendental number. |
+| **Tree map** | The wall subdivided into a tree map, every rectangle split again and again, the splits sliding, each leaf a zoomed tile of the picture. |
+| **Quasicrystal** | Five, seven or nine plane waves summed into a pattern that never repeats, the picture showing through its drifting contours. |
+| **Interference** | Circular waves from moving sources add up across the wall and refract the picture; their heights are drawn as contour lines. |
+| **Weave** | The picture woven from warp and weft threads that pass over and under, each thread carrying its strip of the film. |
+| **Flow lines** | Noise smeared along the picture's own contours (line integral convolution), so the film becomes strands that follow its shapes. |
+| **Moiré** | Two line gratings turning against each other, the picture bending the second: interference that rolls across the film. |
+| **Waveform rows** | Rows of waveforms, each line pushed up by the brightness under it and hiding the rows behind: data as a landscape. |
+| **Parallax camera** | The flat picture given depth guessed from itself — the floor is near, bright sharp detail is near, dark haze is far — and a camera that drifts around it so near things slide over far things. Follows the pointer. |
+| **Circular** | Circles packed over the wall, each turning its own copy of the picture at its own speed, breathing with the film. |
+| **Dust** | The picture dissolves into grains that drift up and away, then gathers itself again. |
+| **Bar field** | The picture as columns of bars whose heights read the film's brightness: an equaliser made of the video. Link gain to the bass. |
+| **Etching** | The film engraved: cross-hatching by brightness, the hatch turning with the picture's contours, on paper. |
+| **Platonic** | Wireframe cube, octahedron and tetrahedron turning over the wall, their edges lit by the picture behind them. |
 | **Stage lights** | Coloured spotlights on a rail above the wall sweep their beams across it; every shape throws a moving shadow from each. Beam haze, colours and rail height are yours. |
 | **Neon outlines** | Every masked shape traced by a glowing tube with a light chasing along it and a little mains flicker; an inner tube and the picture's own edges optional. |
 | **Flip tiles** | The picture cut into tiles that turn over in waves from the centre, diagonally or at random, showing a recoloured copy on their backs. |
@@ -270,6 +312,15 @@ and a video playing); rerun it after adding or changing an effect.
 </tr><tr>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/thermal.jpg" width="220" alt="Thermal camera"><br><sub>Thermal camera</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/stainedglass.jpg" width="220" alt="Stained glass"><br><sub>Stained glass</sub></td>
+</tr></table>
+
+**Generative**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/reaction.jpg" width="220" alt="Reaction diffusion"><br><sub>Reaction diffusion</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/life.jpg" width="220" alt="Game of Life"><br><sub>Game of Life</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/rule.jpg" width="220" alt="Rule 110"><br><sub>Rule 110</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/coral.jpg" width="220" alt="Coral growth"><br><sub>Coral growth</sub></td>
 </tr></table>
 
 **Shapes**

@@ -5,3 +5,5 @@ build/icon.iconset/
 *.log
 
 assets/mediapipe/
+.env
+.env.*

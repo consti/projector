@@ -404,10 +404,16 @@ function queueState() {
 }
 
 // The static menus (effect types, scene names, qualities), sent once on hello.
-let DECK_CATALOG = null;
+let DECK_CATALOG = null, DECK_CATALOG_KEY = '';
 function deckCatalog() {
-  if (DECK_CATALOG) return DECK_CATALOG;
+  // the phone sees the same set the Mac's catalogue is limited to
+  const set = activeSet();
+  const key = set ? set.name + ':' + set.types.join(',') : '';
+  if (DECK_CATALOG && DECK_CATALOG_KEY === key) return DECK_CATALOG;
+  DECK_CATALOG_KEY = key;
+  const allowed = set ? new Set(set.types) : null;
   const effects = [...FX_REGISTRY.values()]
+    .filter((s) => !allowed || allowed.has(s.type))
     .map((s) => ({
       type: s.type, label: s.label || s.type, group: s.group || 'Other', hint: s.hint || '',
       // the parameter schema, so the phone can build sliders for a layer
@@ -421,6 +427,13 @@ function deckCatalog() {
     palettes: PALETTE_MODES,
   };
   return DECK_CATALOG;
+}
+
+/** The effect set the catalogue is limited to, or null for all. */
+function activeSet() {
+  const st = S && S.settings;
+  if (!st || !st.fxSet) return null;
+  return (st.fxSets || []).find((x) => x.name === st.fxSet) || null;
 }
 
 // Apply one control intent from a phone against the live project.
@@ -845,6 +858,9 @@ function fxUi() {
     // next commit happens to refresh the panel
     live: (fn) => { updaters.push(fn); try { fn(); } catch {} },
     motionBlobs: () => motionActive,
+    settings: () => (S && S.settings) || {},
+    patchSettings: (p) => api.patchState({ settings: p }),
+    prompt: (label) => promptModal(label),
   });
 }
 
@@ -1424,6 +1440,8 @@ function applyState(s) {
     project.global.refW = w; project.global.refH = h;
   }
   ensureFx(project);
+  const setKey = JSON.stringify([s.settings && s.settings.fxSet, s.settings && s.settings.fxSets]);
+  if (setKey !== applyState.setKey) { applyState.setKey = setKey; if (!first) { buildInspector(); api.remoteSend(null, remote.catalogMsg()); } }
   remote.applyState(s);
   player.setSource(s.transport.source, { preview: usePreviewStream() });
   renderPlaylist();

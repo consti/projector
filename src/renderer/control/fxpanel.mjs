@@ -70,6 +70,26 @@ export const SCENES = [
   { name: 'Frost', layers: [['frost', {}]], note: 'Ice creeps out of every shape, then melts back.' },
   { name: 'Contour map', layers: [['contour', {}]] },
 
+  // --- generative (after the Max Cooper videos) ---------------------------------
+  { name: 'Order from chaos', layers: [['reaction', {}]], note: 'Reaction-diffusion grows out of the film’s highlights.' },
+  { name: 'Emergence', layers: [['life', {}]] },
+  { name: 'Repetition', layers: [['sprawl', {}]], note: 'The picture duplicates and recedes for ever.' },
+  { name: 'Aleph', layers: [['aleph', {}]], note: 'The infinite zoom. Move the pointer to steer it.' },
+  { name: 'Symmetry', layers: [['symmetry', {}]] },
+  { name: 'Perpetual motion', layers: [['pointcloud', {}], ['plexus', { cells: 10, bgDim: 0, dot: 0.05, line: 0.02 }]] },
+  { name: 'Transcendental', layers: [['digits', {}]] },
+  { name: 'Tree map', layers: [['treemap', {}]] },
+  { name: 'Quasicrystal', layers: [['quasicrystal', {}]] },
+  { name: 'Woven', layers: [['weave', {}]] },
+  { name: 'Parallax camera', layers: [['parallax', {}]], note: 'Depth guessed from the picture; the camera follows the pointer.' },
+  { name: 'Coral', layers: [['coral', {}]] },
+  { name: 'Unknown pleasures', layers: [['joyplot', {}]] },
+  {
+    name: 'Equaliser wall', note: 'Bars of the picture that jump with the bass.',
+    audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.6, exposure: 0, wind: 0 }, globalSrc: 'level' },
+    layers: [['bars', { gain: 1 }, { mod: [{ p: 'gain', src: 'bass', amt: 1.2 }] }]],
+  },
+
   // --- audio reactive -------------------------------------------------
   {
     name: 'Beat drop', note: 'Balls fall on every beat and swell with the bass.',
@@ -137,7 +157,7 @@ export const SCENES = [
   },
 ];
 
-const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'Trippy', 'Retro', 'Look'];
+const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'Generative', 'Trippy', 'Retro', 'Look'];
 
 export function buildFxSection(ui) {
   const P = ui.project();
@@ -466,8 +486,40 @@ function soundLinks(ui, fx, sel, spec) {
 // Built once; only the "in the stack" badges refresh on later rebuilds.
 
 export const thumbUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.jpg';
+export const clipUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.webm';
 
-const browserState = { q: '', group: '', el: null, refresh: null };
+// A card shows its captured still; hovering it plays the recorded clip of the
+// effect in motion (scripts/fx-thumbs.mjs records both). Clips that do not
+// exist fail quietly and the still stays.
+const noClip = new Set();
+function hoverClip(thumbEl, type) {
+  let vid = null, timer = null;
+  const start = () => {
+    if (vid || noClip.has(type)) return;
+    vid = document.createElement('video');
+    vid.className = 'fxClip'; vid.muted = true; vid.loop = true; vid.playsInline = true; vid.autoplay = true;
+    vid.src = clipUrl(type);
+    vid.onerror = () => { noClip.add(type); stop(); };
+    vid.oncanplay = () => vid.classList.add('on');
+    thumbEl.appendChild(vid);
+    vid.play().catch(() => {});
+  };
+  const stop = () => {
+    clearTimeout(timer); timer = null;
+    if (vid) { try { vid.pause(); vid.removeAttribute('src'); vid.load(); } catch {} vid.remove(); vid = null; }
+  };
+  thumbEl.addEventListener('pointerenter', () => { clearTimeout(timer); timer = setTimeout(start, 120); });
+  thumbEl.addEventListener('pointerleave', stop);
+}
+
+const browserState = { q: '', group: '', el: null, refresh: null, editing: false, setKey: '' };
+
+// the active effect set, from settings: { name, types } or null for everything
+function activeSet(ui) {
+  const st = ui.settings ? ui.settings() : {};
+  if (!st.fxSet) return null;
+  return (st.fxSets || []).find((x) => x.name === st.fxSet) || null;
+}
 
 export function buildFxBrowser(ui) {
   if (browserState.el) { browserState.refresh(); return browserState.el; }
@@ -487,7 +539,55 @@ export function buildFxBrowser(ui) {
     class: 'chip' + (browserState.group === value ? ' on' : ''), text: label,
     onclick: () => { browserState.group = value; render(); },
   });
-  root.appendChild(el('div', { class: 'fxTools' }, [search, chips]));
+  // Sets: a named shortlist of effects so the catalogue shows only what you
+  // picked for tonight. "Edit" shows every effect with a check box per card.
+  const setsBar = el('div', { class: 'fxSets' });
+  const renderSets = () => {
+    setsBar.innerHTML = '';
+    const st = ui.settings ? ui.settings() : {};
+    const sets = st.fxSets || [];
+    const cur = activeSet(ui);
+    const sel = el('select', { title: 'Effect set' });
+    sel.appendChild(el('option', { value: '', text: 'All effects' }));
+    for (const s of sets) sel.appendChild(el('option', { value: s.name, text: s.name + ' (' + s.types.length + ')' }));
+    sel.appendChild(el('option', { value: '__new', text: '+ New set…' }));
+    sel.value = cur ? cur.name : '';
+    sel.onchange = async () => {
+      if (sel.value === '__new') {
+        const name = await ui.prompt('Name the set');
+        sel.value = cur ? cur.name : '';
+        if (!name || !name.trim()) return;
+        const n = name.trim();
+        if (sets.some((s) => s.name === n)) { ui.toast('There is already a set called ' + n); return; }
+        ui.patchSettings({ fxSets: [...sets, { name: n, types: [] }], fxSet: n });
+        browserState.editing = true;
+        return;
+      }
+      browserState.editing = false;
+      ui.patchSettings({ fxSet: sel.value });
+    };
+    setsBar.appendChild(el('span', { class: 'hint', text: 'Set' }));
+    setsBar.appendChild(sel);
+    if (cur) {
+      const edit = el('button', { class: 'btn sm' + (browserState.editing ? ' on' : ''), text: browserState.editing ? 'Done' : 'Edit set',
+        title: 'Choose which effects belong to this set', onclick: () => { browserState.editing = !browserState.editing; render(); } });
+      setsBar.appendChild(edit);
+      if (browserState.editing) {
+        setsBar.appendChild(el('button', { class: 'btn sm', text: 'Rename', onclick: async () => {
+          const name = await ui.prompt('Rename the set');
+          if (!name || !name.trim()) return;
+          const n = name.trim();
+          ui.patchSettings({ fxSets: sets.map((s) => (s.name === cur.name ? { ...s, name: n } : s)), fxSet: n });
+        } }));
+        setsBar.appendChild(el('button', { class: 'btn sm danger', text: 'Delete set', onclick: () => {
+          browserState.editing = false;
+          ui.patchSettings({ fxSets: sets.filter((s) => s.name !== cur.name), fxSet: '' });
+        } }));
+        setsBar.appendChild(el('span', { class: 'hint', text: 'Tick the effects that belong in this set. Scenes show when every effect they use is in it.' }));
+      }
+    }
+  };
+  root.appendChild(el('div', { class: 'fxTools' }, [search, chips, setsBar]));
 
   const body = el('div', { class: 'fxBody' });
   root.appendChild(body);
@@ -505,13 +605,37 @@ export function buildFxBrowser(ui) {
     ui.toast('Added ' + (REGISTRY.get(type)?.label || type));
   };
 
+  const toggleInSet = (type, on) => {
+    const st = ui.settings();
+    const sets = st.fxSets || [];
+    ui.patchSettings({ fxSets: sets.map((s) => {
+      if (s.name !== st.fxSet) return s;
+      const types = new Set(s.types);
+      if (on) types.add(type); else types.delete(type);
+      return { ...s, types: [...types] };
+    }) });
+  };
+
   const card = (e) => {
     const n = inStack(e.type);
+    const cur = activeSet(ui);
+    const inSet = !cur || cur.types.includes(e.type);
     const badge = el('span', { class: 'fxBadge' + (n ? ' on' : ''), text: n ? (n === 1 ? 'in the stack' : n + ' in the stack') : '' });
     const img = el('img', { src: thumbUrl(e.type), alt: '', loading: 'lazy' });
     img.onerror = () => { img.replaceWith(el('div', { class: 'fxNoThumb', text: e.label[0] })); };
-    const c = el('button', { class: 'fxCard', title: 'Add ' + e.label, 'data-type': e.type }, [
-      el('div', { class: 'fxThumb' }, [img, badge, el('span', { class: 'fxAdd', text: '+' })]),
+    const kids = [img, badge, el('span', { class: 'fxAdd', text: '+' })];
+    let pick = null;
+    if (cur && browserState.editing) {
+      pick = el('input', { type: 'checkbox', class: 'fxPick', title: 'In this set' });
+      pick.checked = inSet;
+      pick.onclick = (ev) => ev.stopPropagation();
+      pick.onchange = () => toggleInSet(e.type, pick.checked);
+      kids.push(pick);
+    }
+    const thumb = el('div', { class: 'fxThumb' }, kids);
+    hoverClip(thumb, e.type);
+    const c = el('button', { class: 'fxCard' + (cur && browserState.editing && !inSet ? ' dim' : ''), title: 'Add ' + e.label, 'data-type': e.type }, [
+      thumb,
       el('div', { class: 'fxCardBody' }, [
         el('div', { class: 'fxCardName', text: e.label }),
         el('div', { class: 'fxCardHint', text: e.hint || '' }),
@@ -526,8 +650,10 @@ export function buildFxBrowser(ui) {
     const img = el('img', { src: thumbUrl(first), alt: '', loading: 'lazy' });
     img.onerror = () => { img.replaceWith(el('div', { class: 'fxNoThumb', text: s.name[0] })); };
     const tags = el('div', { class: 'fxTags' }, s.layers.map(([t]) => el('span', { class: 'tag', text: REGISTRY.get(t)?.label || t })));
+    const sthumb = el('div', { class: 'fxThumb' }, [img, s.audio ? el('span', { class: 'fxBadge on', text: '♪ reacts to sound' }) : null]);
+    hoverClip(sthumb, first);
     const c = el('button', { class: 'fxCard scene', title: s.note || s.name }, [
-      el('div', { class: 'fxThumb' }, [img, s.audio ? el('span', { class: 'fxBadge on', text: '♪ reacts to sound' }) : null]),
+      sthumb,
       el('div', { class: 'fxCardBody' }, [
         el('div', { class: 'fxCardName', text: s.name }),
         tags,
@@ -545,6 +671,7 @@ export function buildFxBrowser(ui) {
   };
 
   function render() {
+    renderSets();
     chips.innerHTML = '';
     chips.appendChild(chip('All', ''));
     chips.appendChild(chip('Scenes', 'scenes'));
@@ -552,10 +679,13 @@ export function buildFxBrowser(ui) {
 
     body.innerHTML = '';
     const q = browserState.q.trim().toLowerCase();
-    const match = (e) => !q || (e.label + ' ' + e.type + ' ' + (e.hint || '') + ' ' + (e.group || '')).toLowerCase().includes(q);
+    const cur = activeSet(ui);
+    const allowed = cur && !browserState.editing ? new Set(cur.types) : null;
+    const match = (e) => (!allowed || allowed.has(e.type)) && (!q || (e.label + ' ' + e.type + ' ' + (e.hint || '') + ' ' + (e.group || '')).toLowerCase().includes(q));
 
     if (!browserState.group || browserState.group === 'scenes') {
-      const list = SCENES.filter((s) => !q || (s.name + ' ' + (s.note || '') + ' ' + s.layers.map((l) => l[0]).join(' ')).toLowerCase().includes(q));
+      const list = SCENES.filter((s) => (!allowed || s.layers.every((l) => allowed.has(l[0])))
+        && (!q || (s.name + ' ' + (s.note || '') + ' ' + s.layers.map((l) => l[0]).join(' ')).toLowerCase().includes(q)));
       if (list.length) {
         body.appendChild(el('div', { class: 'fxGroupHead' }, [
           el('h2', { text: 'Scenes' }),
@@ -577,7 +707,12 @@ export function buildFxBrowser(ui) {
         body.appendChild(el('div', { class: 'fxGrid' }, list.map(card)));
       }
     }
-    if (!body.children.length) body.appendChild(el('div', { class: 'hint fxEmpty', text: 'Nothing matches “' + browserState.q + '”.' }));
+    if (!body.children.length) {
+      body.appendChild(el('div', { class: 'hint fxEmpty', text: allowed && !q
+        ? 'This set is empty. Press "Edit set" and tick the effects you want in it.'
+        : 'Nothing matches “' + browserState.q + '”.' }));
+    }
+    browserState.setKey = JSON.stringify([cur, browserState.editing]);
   }
 
   search.oninput = () => { browserState.q = search.value; render(); };
@@ -586,6 +721,9 @@ export function buildFxBrowser(ui) {
 
   browserState.el = root;
   browserState.refresh = () => {
+    // the set changed under us (settings arrived): draw the catalogue again
+    const key = JSON.stringify([activeSet(ui), browserState.editing]);
+    if (key !== browserState.setKey) { render(); return; }
     for (const c of root.querySelectorAll('.fxCard[data-type]')) {
       const n = inStack(c.dataset.type);
       const b = c.querySelector('.fxBadge');
@@ -608,4 +746,5 @@ const GROUP_BLURB = {
   Trippy: 'The picture folded, tiled, mirrored and fed back into itself.',
   Retro: 'Synthwave horizons, worn tape and digital tears.',
   Look: 'Image treatments: print, text, 8-bit, paint, thermal, glass.',
+  Generative: 'The picture run through generative systems, after the Max Cooper videos: reaction-diffusion, automata, symmetry operations, infinite zooms, networks, tree maps, weaving.',
 };

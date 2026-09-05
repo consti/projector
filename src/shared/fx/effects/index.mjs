@@ -17,6 +17,8 @@ import { mirror, room, burn } from './illusion.mjs';
 import { shadows, extrude, aura, stagelights, neon, fieldlines, shockwave, glassrim, plasma, frost, contour } from './shapes.mjs';
 import { halftone, ascii, eightbit, painterly, thermal, stainedglass } from './look.mjs';
 import tetris from './tetris.mjs';
+import { reaction, life, rule, coral, symmetry, sprawl, aleph, pointcloud, plexus, digits, treemap, quasicrystal,
+  interference, weave, flowlines, moire, joyplot, parallax, circular, dust, bars, etching, polyhedra } from './generative.mjs';
 
 export const EFFECTS = [
   balls, shapes, emoji, water, smoke, fire, ink, snow, rain, sand, ripples,
@@ -25,5 +27,7 @@ export const EFFECTS = [
   kaleido, droste, feedback, tessellate, hyperbolic, tunnel, acid, mirror, room, fliptiles, chrome,
   synthwave, vhs, glitch,
   halftone, ascii, eightbit, painterly, thermal, stainedglass,
+  reaction, life, rule, coral, symmetry, sprawl, aleph, pointcloud, plexus, digits, treemap, quasicrystal,
+  interference, weave, flowlines, moire, joyplot, parallax, circular, dust, bars, etching, polyhedra,
   shadows, extrude, aura, fieldlines, shockwave, glassrim, plasma, frost, contour, stagelights, neon,
 ];

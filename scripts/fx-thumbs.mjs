@@ -8,7 +8,10 @@
 //
 // Each effect is put on the stack alone, given a few seconds to develop, and
 // the control preview is captured with the mapping handles hidden. Output goes
-// to src/renderer/control/fx-thumbs/<type>.jpg (720 px wide) via `sips`.
+// to src/renderer/control/fx-thumbs/<type>.jpg (720 px wide) via `sips`, and,
+// unless --no-clips is given, a short <type>.webm (480 px, ~3.5 s) recorded
+// from the preview canvas with MediaRecorder, which the catalogue plays when
+// you hover a card.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,7 +21,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'src', 'renderer', 'control', 'fx-thumbs');
 const PORT = process.env.CDP_PORT || 9222;
-const only = process.argv.slice(2);
+const args = process.argv.slice(2);
+const CLIPS = !args.includes('--no-clips');
+const only = args.filter((a) => !a.startsWith('--'));
 
 // effects that need time to build up before they look like anything
 const WAIT = { tetris: 9000, burn: 7000, feedback: 4000, shatter: 4000, water: 5000, snow: 5000, sand: 14000, vines: 12000,
@@ -58,9 +63,13 @@ const list = only.length ? reg.filter((t) => only.includes(t)) : reg;
 fs.mkdirSync(OUT, { recursive: true });
 
 // remember what was on the stack, hide the handles
+// the Map view has the big stage; the other views only dock a small preview
 const saved = await c.eval(`(() => { const d = window.__dev; const fx = d.project.fx;
-  const s = { layers: fx.layers, enabled: fx.enabled, handles: d.stage.showHandles, view: d.currentView };
-  d.stage.showHandles = false; d.stage.draw(); return JSON.stringify({ layers: s.layers, enabled: s.enabled, handles: s.handles }); })()`);
+  const view = (document.querySelector('#rail .railBtn.on') || {}).dataset?.view || 'stage';
+  document.querySelector('#rail [data-view=stage]').click();
+  const s = { layers: fx.layers, enabled: fx.enabled, handles: d.stage.showHandles, view };
+  d.stage.showHandles = false; d.stage.draw(); return JSON.stringify({ layers: s.layers, enabled: s.enabled, handles: s.handles, view }); })()`);
+await sleep(600);
 
 for (const type of list) {
   await c.eval(`import('/shared/schema.mjs').then((m) => { const d = window.__dev; const fx = d.project.fx;
@@ -73,10 +82,33 @@ for (const type of list) {
   fs.writeFileSync(png, Buffer.from(shot.data, 'base64'));
   execFileSync('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', '74', '-Z', '720', png, '--out', path.join(OUT, type + '.jpg')], { stdio: 'ignore' });
   fs.unlinkSync(png);
-  console.log(type.padEnd(14), err ? 'ERROR ' + err.split('\n')[0] : 'ok');
+  let clipNote = '';
+  if (CLIPS && !err) {
+    // a small offscreen canvas mirrors the preview while MediaRecorder runs
+    const dataUrl = await c.eval(`new Promise((res, rej) => {
+      const src = document.querySelector('#glc');
+      const cv = document.createElement('canvas'); cv.width = 480; cv.height = Math.round(480 * src.height / src.width);
+      const x = cv.getContext('2d');
+      let on = true;
+      const tick = () => { if (!on) return; x.drawImage(src, 0, 0, cv.width, cv.height); requestAnimationFrame(tick); };
+      tick();
+      const stream = cv.captureStream(30);
+      const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 900000 });
+      const chunks = [];
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onstop = () => { on = false; const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(new Blob(chunks, { type: 'video/webm' })); };
+      rec.start(250);
+      setTimeout(() => rec.stop(), 3500);
+    })`);
+    const b64 = dataUrl.split(',')[1];
+    fs.writeFileSync(path.join(OUT, type + '.webm'), Buffer.from(b64, 'base64'));
+    clipNote = ' · clip ' + Math.round(b64.length * 0.75 / 1024) + ' KB';
+  }
+  console.log(type.padEnd(14), err ? 'ERROR ' + err.split('\n')[0] : 'ok' + clipNote);
 }
 
 // put things back
 await c.eval(`(() => { const d = window.__dev; const s = ${JSON.stringify(saved)}; const o = JSON.parse(s);
-  d.project.fx.layers = o.layers; d.project.fx.enabled = o.enabled; d.stage.showHandles = o.handles; d.push(true); d.rebuild(); d.stage.draw(); return true; })()`);
+  d.project.fx.layers = o.layers; d.project.fx.enabled = o.enabled; d.stage.showHandles = o.handles; d.push(true); d.rebuild(); d.stage.draw();
+  if (o.view && o.view !== 'stage') document.querySelector('#rail [data-view=' + o.view + ']')?.click(); return true; })()`);
 c.ws.close();

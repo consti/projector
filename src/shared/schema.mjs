@@ -188,6 +188,8 @@ export function defaultState() {
       remoteEnabled: false,    // serve the phone-camera page on the LAN
       remotePort: 9223,
       remoteCalib: null,       // { pts: 4 camera-normalized marker centres, w, h, H: camera->output homography }
+      fxSets: [],              // named sets of effect types, to keep the catalogue short: [{ name, types }]
+      fxSet: '',               // the active set's name, or '' for every effect
     },
     remote: { running: false, port: 9223, secure: false, urls: [], clients: [], error: null, models: false },
   };
