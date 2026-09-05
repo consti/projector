@@ -30,6 +30,19 @@ contextBridge.exposeInMainWorld('api', {
   reportStageRect: (rect) => ipcRenderer.invoke('remote:stageRect', rect),
   onRemoteMsg: on('remote:msg'),
 
+  charactersList: () => ipcRenderer.invoke('characters:list'),
+  charactersGenerate: (photo, opts) => ipcRenderer.invoke('characters:generate', photo, opts),
+  charactersSave: (rec) => ipcRenderer.invoke('characters:save', rec),
+  charactersUpdate: (id, patch) => ipcRenderer.invoke('characters:update', id, patch),
+  charactersRemove: (id) => ipcRenderer.invoke('characters:remove', id),
+
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+  aiSpend: () => ipcRenderer.invoke('ai:spend'),
+  onAiSpend: on('ai:spend'),
+  aiModels: (force) => ipcRenderer.invoke('ai:models', force),
+  aiRespond: (req) => ipcRenderer.invoke('ai:respond', req),
+  aiImage: (req) => ipcRenderer.invoke('ai:image', req),
+
   displays: () => ipcRenderer.invoke('displays:get'),
   setOutput: (role, cfg) => ipcRenderer.invoke('outputs:set', role, cfg),
   syncOutputs: () => ipcRenderer.invoke('outputs:sync'),
@@ -59,6 +72,8 @@ contextBridge.exposeInMainWorld('api', {
   libraryImport: () => ipcRenderer.invoke('library:import'),
   libraryDiscover: (seedIds, exclude, limit) => ipcRenderer.invoke('library:discover', seedIds, exclude, limit),
   libraryPlay: (ids, opts) => ipcRenderer.invoke('library:play', ids, opts),
+  libraryKeep: (id) => ipcRenderer.invoke('library:keep', id),
+  playlistKeep: (index) => ipcRenderer.invoke('playlist:keep', index),
   onLibrary: on('library'),
   onLibraryProgress: on('library:progress'),
   onLibraryToast: on('library:toast'),

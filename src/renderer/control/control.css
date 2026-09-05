@@ -397,3 +397,41 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 /* --- hover clips in the catalogue --- */
 .fxClip{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .2s;pointer-events:none;background:#000}
 .fxClip.on{opacity:1}
+
+/* --- AI log --- */
+.ailog{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto}
+.aient{display:grid;grid-template-columns:62px 1fr;gap:6px;font-size:11px;line-height:1.35;color:var(--dim)}
+.aient .mono{color:var(--dim2)}
+.aient.plan{color:var(--fg)}
+.aient.error{color:#ffb3c0}
+.aient.caption,.aient.dream{color:#b9d7ff}
+
+/* --- people --- */
+#peopleView{position:absolute;inset:0;background:#0b0c0e;display:flex;flex-direction:column;overflow:hidden}
+#peopleView[hidden]{display:none}
+#peopleView .libGrid.people{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.peopleCard.off{opacity:.5}
+.peopleThumb{height:170px;display:grid;place-items:center;background:
+  repeating-conic-gradient(#14171c 0 25%,#0f1114 0 50%) 0 0/16px 16px}
+.peoplePrev{width:96px;height:128px;image-rendering:pixelated}
+.peopleName{background:#101214;border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:13px;font-weight:600;width:100%}
+.peopleSets{gap:4px 8px;margin-top:4px}
+.peopleSets .tog{font-size:11px}
+
+/* --- AI spend --- */
+.spendRow{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.spendCell{background:#101214;border:1px solid var(--line);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:1px}
+.spendCell b{font-size:14px;font-family:ui-monospace,Menlo,monospace}
+.spendCell span{font-size:10px;color:var(--dim2);text-transform:uppercase;letter-spacing:.05em}
+.spendTable{width:100%;border-collapse:collapse;font-size:11px}
+.spendTable td{padding:2px 4px;border-bottom:1px solid #1e2126;vertical-align:top}
+.spendTable td.r{text-align:right}
+
+#tAi.busy .sw{animation:aiPulse 1s ease-in-out infinite}
+@keyframes aiPulse{50%{box-shadow:0 0 8px var(--accent)}}
+
+/* --- playlist: keep + cache badges --- */
+.pit .keep{opacity:0;color:var(--dim2);flex:none;padding:0 3px;cursor:pointer;font-size:12px}
+.pit:hover .keep{opacity:1}
+.pit .keep:hover{color:var(--warn)}
+.pit .k.cached{background:#2a2a12;color:#d6cf6f}

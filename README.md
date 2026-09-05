@@ -199,7 +199,8 @@ dividing cellular forms, wave interference, weaving, tree maps:
 | **Weave** | The picture woven from warp and weft threads that pass over and under, each thread carrying its strip of the film. |
 | **Flow lines** | Noise smeared along the picture's own contours (line integral convolution), so the film becomes strands that follow its shapes. |
 | **Moiré** | Two line gratings turning against each other, the picture bending the second: interference that rolls across the film. |
-| **Waveform rows** | Rows of waveforms, each line pushed up by the brightness under it and hiding the rows behind: data as a landscape. |
+| **Waveform rows** | The live spectrum as rows of waveforms: each new row is the sound right now, older rows recede behind it (a picture-driven mode as well). Data as a landscape. |
+| **Sonar rings** | The sound as rings pulsing out from the centre: the newest beat the innermost ring, each older one a ring further out. |
 | **Parallax camera** | The flat picture given depth guessed from itself — the floor is near, bright sharp detail is near, dark haze is far — and a camera that drifts around it so near things slide over far things. Follows the pointer. |
 | **Circular** | Circles packed over the wall, each turning its own copy of the picture at its own speed, breathing with the film. |
 | **Dust** | The picture dissolves into grains that drift up and away, then gathers itself again. |
@@ -339,6 +340,19 @@ dividing cellular forms, wave interference, weaving, tree maps:
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/contour.jpg" width="220" alt="Contour map"><br><sub>Contour map</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/stagelights.jpg" width="220" alt="Stage lights"><br><sub>Stage lights</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/neon.jpg" width="220" alt="Neon outlines"><br><sub>Neon outlines</sub></td>
+</tr></table>
+
+**AI**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/aitext.jpg" width="220" alt="AI caption"><br><sub>AI caption</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/aidream.jpg" width="220" alt="AI dream"><br><sub>AI dream</sub></td>
+</tr></table>
+
+**People**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/people.jpg" width="220" alt="Pixel people"><br><sub>Pixel people</sub></td>
 </tr></table>
 
 <!-- gallery:end -->
@@ -591,6 +605,78 @@ Both windows derive their playback time from one shared wall clock and nudge
 their own playback rate to stay within ~35 ms, so the two screens stay together
 without one driving the other. Choose which screen carries the audio under
 **Audio from**.
+
+## AI
+
+Everything here is off until **AI on** in Setup → AI. The key is read from the
+app's settings, the environment, or a `.env` file at the repository root
+(`OPENAI_API_KEY=sk-…`). The models the key can use are listed from the API and
+picked from three menus: the **Director** (plans the show; gpt-5.4 by default),
+the **Reader** (reads frames for captions; gpt-5.4-mini) and the **Painter**
+(re-paints frames and draws the pixel people; gpt-image-1.5). All calls run in
+the main process; renderers never see the key.
+
+### The director
+
+**AI steers the effects** (also the *AI* switch in the top bar) hands the model
+the show as it stands whenever a track starts: what is playing and what is
+next, the measured tempo and the spectrum averaged over the last seconds, the
+colours on the wall, the shapes you have masked, which walls are on, its own
+recent plans, and a compact catalogue of every effect with its parameters and
+ranges. It answers with one tool call — a full plan of one to four layers with
+parameters, sound links, beat triggers, palette modes and world settings — which
+is validated against the real schemas and applied. A **brief** is a standing
+direction it must respect ("dark and slow", "kids' party"). **Re-plan** can be
+once per track, on a timer with a random spread, or **when the music changes
+section**: a sustained jump or drop in loudness and bass against the previous
+half minute is found locally, without a model, and then the director is asked
+again — usually, not always, and never within 40 s of the last plan. The Effects
+panel shows its latest note; the Setup log keeps the last dozen.
+
+### Reading the film
+
+A second copy of the video runs ahead of the playhead. While an **AI caption**
+layer is in the stack, frames are read every so often, described in the voice
+you chose (poetic, haiku, film noir, field notes, breaking news, a child
+explaining it, tarot …) and language, and the caption is held until the film
+reaches that frame, then typeset on the wall in the type, place and animation
+the layer chooses. With **AI dream**, frames are re-painted by the image model
+in a named medium (oil, woodcut, stained glass, blueprint …) and cross-faded in
+when their moment comes — slow and costly, one every half minute or so. **AI
+picks the emoji** lets the reader choose the emoji rain's emoji for the scene.
+
+### Spending
+
+Setup → AI keeps a ledger: every call's token counts priced at list rates, per
+day, per function (director, captions, dreams, pixel people). Today, seven days,
+the month and all time, plus the last ten days in a table. Estimates, not an
+invoice.
+
+## Pixel people
+
+Anyone on the phone opens **F4 Me**, frames themselves, keeps or re-rolls the
+suggested name (a verb and a fruit — Juggling Papaya) and presses **Pixelate
+me**. The photo goes to the image model with a style reference and comes back
+as a sprite sheet on a magenta field; the Mac keys the magenta out, re-packs the
+frames, saves the character and, a minute later, adds a second sheet of eight
+dance moves drawn from the first. The phone is told it has been sent off and
+need not wait.
+
+The **People** view is the roster: an animated preview of each character, a
+name to edit, on/off, which effect sets they belong to, remove, and *Add from
+photo…* for photos on the Mac. The **Pixel people** effect drops everyone who is
+on (and in the active set) into the room — tumbling, screaming, shot in from the
+side or spun in through a time warp — bouncing on landing, then walking the
+tops of your masked shapes and the floor, turning at edges (or not), sitting
+down when it is quiet, dancing to the beat with their own moves, and getting
+knocked flying by a hand or a tracked person.
+
+## Playlists that keep
+
+Every streamed track is pulled down as it plays (**Pre-download streams** in
+Setup) and played from disk the next time it comes round. The copies live in a
+cache of the last 25 — *Streamed lately* in the Library — and press **★ Keep**
+on a playlist item or a cached card to make one part of the library proper.
 
 ## Booleans are switches
 

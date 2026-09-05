@@ -2,13 +2,15 @@ import { Stage } from '/renderer/control/stage.mjs';
 import { CameraPanel } from '/renderer/control/camera.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
-import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLayer } from '/shared/schema.mjs';
+import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLayer, activeCharacters } from '/shared/schema.mjs';
+import { PeopleView, funnyName } from '/renderer/control/characters.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
 import { buildFxSection, buildFxWorldSections, buildFxBrowser, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
 import { LibraryView } from '/renderer/control/library.mjs';
+import { AiDirector } from '/renderer/control/ai.mjs';
 import { REGISTRY as FX_REGISTRY, QUALITY, withDefaults, PALETTE_MODES } from '/shared/fx/system.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
@@ -30,6 +32,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sourceBadge = (it) => {
   const from = it.from || (it.kind === 'file' ? 'file' : it.kind === 'library' ? 'library' : 'stream');
   return from === 'library' ? 'lib' : from === 'file' ? 'file' : from === 'stream' ? 'stream' : from;
+};
+// the library entry a playlist item corresponds to, if one is on disk
+const libEntryFor = (it) => {
+  const items = (typeof libraryView !== 'undefined' && libraryView) ? libraryView.items : [];
+  return items.find((e) => e.id === it.libId || e.id === it.id || (it.url && e.url === it.url)) || null;
 };
 const fmtTime = (s) => {
   if (!isFinite(s) || s < 0) s = 0;
@@ -340,6 +347,13 @@ const remote = new RemotePanel({
   deck: () => deckState(),
   catalog: () => deckCatalog(),
   control: (op, a) => remoteControl(op, a),
+  // a phone pixelating its owner: make the character, tell the phone how it goes
+  pixelate: (id, msg) => {
+    const name = (msg.name || '').trim().slice(0, 40) || funnyName();
+    peopleView.make(msg.photo, name, 'phone', (status) => api.remoteSend(id, { t: 'pixelStatus', name, status }))
+      .then((c) => api.remoteSend(id, { t: 'pixelDone', id: c && c.id, name }))
+      .catch(() => {});
+  },
 });
 
 // A compact snapshot of everything the phone deck can control.
@@ -385,6 +399,8 @@ function deckState() {
       devices: audioDevices,
     },
     queue: queueState(),
+    people: ((S && S.characters) || []).map((c) => ({ id: c.id, name: c.name, enabled: c.enabled, url: null })),
+    peopleActive: activeCharacters(S).map((c) => c.id),
   };
 }
 
@@ -514,6 +530,27 @@ function remoteControl(op, a = {}) {
   }
 }
 
+// -------------------------------------------------------------------- AI ----
+const ai = new AiDirector({
+  project: () => project,
+  state: () => S,
+  push: (commit) => pushProject(commit),
+  rebuild: () => buildInspector(),
+  fxAction: (id, name, arg) => fxAction(id, name, arg),
+  toast,
+  features: () => fxHost.features(),
+  palette: () => (fxHost.system && fxHost.system.palette) || null,
+  patchSettings: (p) => api.patchState({ settings: p }),
+});
+ai.refresh(false);
+
+// ---------------------------------------------------------------- people ----
+const peopleView = new PeopleView($('#peopleView'), {
+  el, toast,
+  settings: () => (S && S.settings) || {},
+  state: () => S,
+});
+
 // --------------------------------------------------------------- library ----
 const libraryView = new LibraryView($('#libraryView'), {
   toast,
@@ -521,7 +558,7 @@ const libraryView = new LibraryView($('#libraryView'), {
   toggleDiscover: () => toggleDiscover(),
 });
 api.library().then((items) => libraryView.setItems(items));
-api.onLibrary((items) => { libraryView.setItems(items); remote.sendLibrary(items); });
+api.onLibrary((items) => { libraryView.setItems(items); remote.sendLibrary(items); if (S) renderPlaylist(); });
 api.onLibraryProgress(({ id, progress }) => libraryView.setProgress(id, progress));
 api.onLibraryToast((m) => toast(m));
 for (const b of document.querySelectorAll('#rail .railBtn')) b.onclick = () => showView(b.dataset.view);
@@ -589,6 +626,7 @@ $('#scrub').oninput = (e) => {
   if (d) api.cmd('seek', (e.target.value / 1000) * d);
 };
 $('#gBlack input').onchange = () => { project.global.blackout = !project.global.blackout; pushProject(true); syncTopSideButtons(); };
+$('#tAi input').onchange = (e) => { ai.patch({ steer: e.target.checked, enabled: e.target.checked ? true : ai.ai.enabled }); if (e.target.checked) ai.lastTrack = null; };
 $('#oProj input').onchange = () => toggleOutput('projector').then(syncTopSideButtons);
 $('#oTv input').onchange = () => toggleOutput('tv').then(syncTopSideButtons);
 
@@ -616,8 +654,9 @@ $('#plClear').onclick = () => { api.patchState({ playlist: { name: null } }); ap
 let plKey = '';
 function renderPlaylist(force) {
   const items = S.playlist.items;
+  const libKey = (typeof libraryView !== 'undefined' && libraryView) ? libraryView.items.map((e) => e.id + (e.cache ? 'c' : 'k') + (e.status || '')[0]).join('') : '';
   const key = items.length + '|' + S.playlist.index + '|' + (S.playlist.name || '') + '|' +
-    items.map((i) => i.id).join(',');
+    items.map((i) => i.id).join(',') + '|' + libKey;
   if (key === plKey && !force) return;
   plKey = key;
 
@@ -633,6 +672,10 @@ function renderPlaylist(force) {
   let curRow = null;
   items.forEach((it, i) => {
     const cur = i === S.playlist.index;
+    const lib = it.kind === 'youtube' ? libEntryFor(it) : null;
+    const cached = lib && lib.cache;
+    const kept = lib && !lib.cache;
+    const badge = kept ? 'lib' : cached ? (lib.status === 'ready' ? 'cached' : 'caching') : sourceBadge(it);
     const row = el('div', { class: 'pit' + (cur ? ' cur' : '') + (it.error ? ' err' : '') }, [
       el('span', { class: 'n', text: String(i + 1) }),
       el('span', {
@@ -640,7 +683,11 @@ function renderPlaylist(force) {
         title: (it.uploader ? it.uploader + ' \u2014 ' : '') + it.title + (it.error ? '\n' + it.error : ''),
       }),
       it.duration ? el('span', { class: 'd', text: fmtTime(it.duration) }) : null,
-      el('span', { class: 'k ' + (it.from || it.kind), text: sourceBadge(it) }),
+      el('span', { class: 'k ' + (kept ? 'library' : cached ? 'cached' : (it.from || it.kind)), text: badge }),
+      it.kind === 'youtube' && !kept ? el('span', {
+        class: 'keep', text: '\u2605', title: cached ? 'Keep this in the library' : 'Download this into the library',
+        onclick: (e) => { e.stopPropagation(); api.playlistKeep(i).then(() => toast(cached ? 'Kept in the library' : 'Downloading into the library')); },
+      }) : null,
       el('span', {
         class: 'x', text: '\u2715', title: 'Remove', onclick: (e) => {
           e.stopPropagation();
@@ -704,7 +751,7 @@ function deleteSelected() {
 const updaters = [];
 // things that need to move every frame rather than on commit (audio meters)
 const frameUpdaters = [];
-const openSections = new Set(['Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets']);
+const openSections = new Set(['Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets', 'AI']);
 
 function section(title, kids) {
   const body = el('div', { class: 'body' }, kids);
@@ -719,14 +766,16 @@ function section(title, kids) {
   return s;
 }
 
-function slider(label, get, set, { min = 0, max = 1, step = 0.01, fmt } = {}) {
+function slider(label, get, set, { min = 0, max = 1, step = 0.01, fmt, push = true } = {}) {
   const inp = el('input', { type: 'range', min, max, step });
   const val = el('span', { class: 'val' });
   const show = () => {
     inp.value = get();
     val.textContent = fmt ? fmt(get()) : Number(get()).toFixed(step < 0.1 ? 2 : 0);
   };
-  inp.oninput = () => { set(Number(inp.value)); show(); pushProject(); };
+  // settings sliders (push: false) apply on release, so a drag is one write
+  inp.oninput = () => { if (push) { set(Number(inp.value)); show(); pushProject(); } else { val.textContent = fmt ? fmt(Number(inp.value)) : inp.value; } };
+  if (!push) inp.onchange = () => { set(Number(inp.value)); };
   inp.ondblclick = () => { };
   updaters.push(show); show();
   return el('div', { class: 'ctl' }, [el('label', { text: label }), inp, val]);
@@ -812,6 +861,7 @@ function buildInspector() {
 
   hosts.out.innerHTML = '';
   hosts.out.appendChild(outputSection());
+  hosts.out.appendChild(ai.section(fxUi()));
   hosts.out.appendChild(mappingSection());
   hosts.out.appendChild(presetSection());
   hosts.out.appendChild(helpSection());
@@ -833,6 +883,7 @@ function showView(name) {
   if (slot) { stageEl.classList.toggle('docked', name !== 'stage'); slot.appendChild(stageEl); }
   else { stageEl.classList.add('docked'); $('#stagePark').appendChild(stageEl); }
   if (name === 'library') libraryView.show(); else libraryView.hide();
+  if (name === 'people') peopleView.show(); else peopleView.hide();
   // the stage changed size — relayout on the next frame
   requestAnimationFrame(() => { stage.layout(); stage.draw && stage.draw(); });
 }
@@ -861,6 +912,7 @@ function fxUi() {
     settings: () => (S && S.settings) || {},
     patchSettings: (p) => api.patchState({ settings: p }),
     prompt: (label) => promptModal(label),
+    ai,
   });
 }
 
@@ -930,6 +982,10 @@ function outputSection() {
   rows.push(el('div', { class: 'hint', text: 'Send the sound to a specific output (e.g. an AirPlay receiver) without changing the Mac’s system default.' }));
   rows.push(selectRow('YouTube max', [['720', '720p'], ['1080', '1080p'], ['1440', '1440p'], ['2160', '4K']],
     () => S.settings.maxHeight || 1080, (v) => api.patchState({ settings: { maxHeight: Number(v) } })));
+  rows.push(el('div', { class: 'row' }, [
+    toggle('Pre-download streams', () => S.settings.preDownload !== false, (v) => api.patchState({ settings: { preDownload: v } }), { push: false }),
+  ]));
+  rows.push(el('div', { class: 'hint', text: 'Every streamed track is pulled down as it plays and played from disk next time. The last 25 stay in a cache (Library → Streamed lately); press ★ Keep on a playlist item to make it part of the library.' }));
   rows.push(el('div', { class: 'row' }, [
     el('button', {
       class: 'btn grow', text: 'Identify outputs',
@@ -1446,10 +1502,15 @@ function applyState(s) {
   player.setSource(s.transport.source, { preview: usePreviewStream() });
   renderPlaylist();
   updateTop();
+  const peopleKey = JSON.stringify(s.characters || []);
+  if (peopleKey !== applyState.peopleKey) { applyState.peopleKey = peopleKey; if (!first && currentView === 'people') peopleView.render(); }
   if (first) buildInspector(); else { syncTopSideButtons(); syncInspector(); }
 }
 
 function syncTopSideButtons() {
+  const aiOn = !!(S.settings.ai && S.settings.ai.steer && S.settings.ai.enabled);
+  $('#tAi input').checked = aiOn;
+  $('#tAi').classList.toggle('busy', !!ai.busy);
   $('#oProj input').checked = !!S.outputs.projector.enabled;
   $('#oTv input').checked = !!S.outputs.tv.enabled;
   $('#gBlack input').checked = !!project.global.blackout;
@@ -1495,7 +1556,7 @@ window.__player = player;
 window.__dev = {
   get project() { return project; },
   get state() { return S; },
-  stage, camera, remote, player, fxHost,
+  stage, camera, remote, player, fxHost, ai, peopleView,
   fxAction,
   push: pushProject,
   rebuild: buildInspector,
@@ -1537,6 +1598,7 @@ function frame() {
       off: tvFill && S.outputs.tv.fx === false,
       aspect: tvFill ? stage.glc.height / Math.max(1, stage.glc.width) : undefined,
       shapes: !tvFill,
+      characters: activeCharacters(S),
     });
     if (fxHost.outgoingAudio && performance.now() - lastAudioSend > 33) {
       lastAudioSend = performance.now();
@@ -1550,6 +1612,7 @@ function frame() {
       if (remote.tracker.live) remote.tracker.drawDebugOver(c.getContext('2d'), c.width / dpr, c.height / dpr, fxAspect(), fxHost.interactors);
     }
     remote.frame();
+    ai.frame();
 
     const t = S.transport;
     const now = targetTime(t);

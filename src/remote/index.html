@@ -29,6 +29,19 @@
   <div id="status" class="fixed left-1/2 -translate-x-1/2 z-20 top-[calc(env(safe-area-inset-top)+2.6rem)] px-3.5 py-1.5 rounded-full text-[12.5px] text-ink-dim bg-surface-2/90 border border-line backdrop-blur pointer-events-none max-w-[86vw] truncate">Connecting…</div>
 
   <main id="deck" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
+  <main id="me" class="fixed inset-x-0 bottom-0 z-[19] safe-b px-3 pb-[92px] flex flex-col gap-2.5" hidden>
+    <div class="rounded-2xl bg-surface-1 border border-line p-4 flex flex-col gap-3 shadow-2xl">
+      <div class="text-[21px] font-semibold uppercase">═ Pixelate me ═</div>
+      <div id="meHint" class="text-[13px] text-ink-dim">Frame yourself in the camera, pick a name, press the button. A pixel version of you drops into the room.</div>
+      <label class="flex flex-col gap-1.5 text-xs uppercase tracking-wider text-ink-dim font-semibold">Your name<div class="flex gap-2"><input type="text" id="meName" maxlength="40" class="flex-1 h-11 rounded-xl bg-surface-2 border border-line px-3 text-ink font-normal normal-case tracking-normal"><button id="meDice" class="w-11 h-11 rounded-xl bg-surface-2 border border-line text-lg">🎲</button></div></label>
+      <div class="flex gap-2">
+        <button id="meFlip" class="w-[52px] h-[52px] shrink-0 rounded-xl bg-surface-2 border border-line grid place-items-center">🔄</button>
+        <button id="meGo" class="flex-1 h-[52px] rounded-xl bg-accent text-black font-semibold text-[15px]">📸 Pixelate me</button>
+      </div>
+      <div id="meStatus" class="text-[13px] text-cyan min-h-[1.2em]"></div>
+      <div id="meRoster" class="flex flex-wrap gap-1.5"></div>
+    </div>
+  </main>
   <main id="queue" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
 
   <div id="msg" class="fixed inset-0 z-[15] flex flex-col items-center justify-center gap-3 px-10 text-center">
@@ -80,6 +93,10 @@
     <button data-view="control" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2.1" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.1" fill="currentColor" stroke="none"/></svg>
       <span class="text-[13px] font-semibold">F2 Mixer</span>
+    </button>
+    <button data-view="me" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
+      <span class="text-[13px] font-semibold">F4 Me</span>
     </button>
     <button data-view="queue" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.5" stroke-linecap="round"/><circle cx="17.2" cy="17.8" r="1.8" fill="currentColor" stroke="none"/><path d="M19 10l2.4-.7V7l-2.4.7z" fill="currentColor" stroke="none"/></svg>

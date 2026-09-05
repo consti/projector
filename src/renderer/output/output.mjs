@@ -2,7 +2,7 @@ import { Engine } from '/shared/gl-engine.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
 import { drawGuides } from '/shared/guides.mjs';
-import { defaultProject } from '/shared/schema.mjs';
+import { defaultProject, activeCharacters } from '/shared/schema.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
 
 const role = new URLSearchParams(location.search).get('role') || 'projector';
@@ -130,6 +130,7 @@ function frame() {
     off: fill && cfg.fx === false,
     aspect: fill ? canvas.height / Math.max(1, canvas.width) : undefined,
     shapes: !fill,
+    characters: activeCharacters(state),
   });
   if (fx.outgoingAudio && (performance.now() - lastAudioSend) > 33) {
     lastAudioSend = performance.now();

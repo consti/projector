@@ -188,11 +188,39 @@ export function defaultState() {
       remoteEnabled: false,    // serve the phone-camera page on the LAN
       remotePort: 9223,
       remoteCalib: null,       // { pts: 4 camera-normalized marker centres, w, h, H: camera->output homography }
+      preDownload: true,       // pull a copy of every streamed track into the cache as it plays
       fxSets: [],              // named sets of effect types, to keep the catalogue short: [{ name, types }]
       fxSet: '',               // the active set's name, or '' for every effect
+      ai: {
+        enabled: false,        // master switch for everything that talks to OpenAI
+        apiKey: '',            // optional; otherwise OPENAI_API_KEY from the environment or .env
+        textModel: 'gpt-5.4',          // planning the show (tool calls, reasoning)
+        visionModel: 'gpt-5.4-mini',   // reading frames for captions (often, so cheap and quick)
+        imageModel: 'gpt-image-1.5',   // dreaming frames
+        steer: false,          // let the model choose and tune the effects
+        steerMode: 'sections', // per track ('track'), at section changes in the music ('sections'), or on a timer ('timer')
+        steerEvery: 90,        // for the timer: seconds between re-plans, give or take a third
+        steerBrief: '',        // a standing direction for the director ("dark and slow", "kids' party")
+        steerReasoning: 'low', // reasoning effort for the planner
+        captionStyle: 'poetic',
+        captionLanguage: 'English',
+        captionEvery: 18,      // seconds between captions
+        lookahead: 12,         // how far ahead of the playhead frames are read
+        dreamEvery: 40,        // seconds between dreamed frames
+        dreamStyle: 'oil painting',
+        emoji: false,          // let the vision model choose the emoji rain's emoji
+      },
     },
     remote: { running: false, port: 9223, secure: false, urls: [], clients: [], error: null, models: false },
+    characters: [],            // the pixel people roster (main fills it): [{ id, name, url, enabled, sets }]
   };
+}
+
+/** The characters that take part: on, and in the active effect set (or in no set). */
+export function activeCharacters(state) {
+  if (!state) return [];
+  const set = (state.settings && state.settings.fxSet) || '';
+  return (state.characters || []).filter((c) => c.enabled !== false && (!set || !c.sets || !c.sets.length || c.sets.includes(set)));
 }
 
 // Rebuild a mesh at a new resolution while preserving the current shape.

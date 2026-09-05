@@ -101,6 +101,7 @@ export class FxSystem {
     this.pendingActions = [];
     this.audio = AUDIO_EMPTY;
     this.beatCount = 0;
+    this.characters = [];           // the pixel people allowed on this wall
   }
 
   // -------------------------------------------------------------- config
@@ -214,6 +215,7 @@ export class FxSystem {
       wind: [(fx.windX || 0) * this._audioGain('wind'), fx.windY || 0],
       interactors: this.interactors,
       audio: this.audio,
+      characters: this.characters,
       quality: this.qual,
       size: [this.chainW, this.chainH],
       screen: this.screen,

@@ -31,6 +31,7 @@ const st = {
   wake: null,
   view: prefs.get('view', 'stage'),   // stage (camera) | control (effects deck) | queue
   deck: null, catalog: null, library: [], libFilter: '', openLayer: null,
+  meBusy: false, myId: prefs.get('myId', null),
 };
 
 // ---------------------------------------------------------- websocket ----
@@ -59,7 +60,7 @@ function onMessage(m) {
   switch (m.t) {
     case 'config': Object.assign(st.cfg, m); ui(); break;
     case 'catalog': st.catalog = m; renderDeck(); break;
-    case 'deck': st.deck = m; renderDeck(); renderQueue(); if (st.view === 'queue' && st.deck) updateDeck(); break;
+    case 'deck': st.deck = m; renderDeck(); renderQueue(); renderRoster(); if (st.view === 'queue' && st.deck) updateDeck(); break;
     case 'frame': onLiveFrame(m); break;
     case 'library': st.library = m.items || []; renderQueue(); break;
     case 'calibOk': leaveAlign(false); toast('Aligned. Now press Track.'); break;
@@ -67,6 +68,8 @@ function onMessage(m) {
     case 'pong': st.latency = Math.round(performance.now() - m.ts); break;
     case 'track': if (m.on && !st.tracking) startTracking(); else if (!m.on && st.tracking) stopTracking(); break;
     case 'align': if (!st.aligning) { if (!st.stream) toast('Start the camera, then press Align'); else enterAlign(); } break;
+    case 'pixelStatus': meStatus(/Failed/.test(m.status) ? m.status : `Sent off (${m.status.toLowerCase()}) — no need to wait, ${m.name} drops in when ready.`, false); if (/Failed/.test(m.status)) st.meBusy = false; break;
+    case 'pixelDone': meStatus(`${m.name} is in the room! Look at the wall.`, true); st.meBusy = false; st.myId = m.id || st.myId; prefs.set('myId', st.myId); ui(); break;
   }
 }
 setInterval(() => send({ t: 'ping', ts: performance.now() }), 2000);
@@ -442,6 +445,9 @@ function setView(v) {
   st.view = v; prefs.set('view', v);
   const panel = v === 'control' || v === 'queue';
   document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
+  document.body.classList.toggle('me', v === 'me');
+  $('#me').hidden = v !== 'me';
+  if (v === 'me') { hideMsg(); if (!st.stream) { st.facing = 'user'; st.deviceId = null; startCamera(); } if (!$('#meName').value) $('#meName').value = funnyName(); renderRoster(); }
   for (const b of document.querySelectorAll('#viewSeg button')) {
     const on = b.dataset.view === v;
     b.classList.toggle('text-white', on);
@@ -738,6 +744,43 @@ function updateDeck() {
   }
 }
 
+// --------------------------------------------------------------- me (pixelate)
+const VERBS = ['Juggling', 'Dancing', 'Wobbling', 'Bouncing', 'Sneaking', 'Whistling', 'Napping', 'Spinning', 'Humming', 'Skipping', 'Yawning', 'Zooming', 'Tiptoeing', 'Giggling', 'Floating', 'Marching', 'Snoring', 'Waddling', 'Twirling', 'Grooving'];
+const FRUITS = ['Papaya', 'Kumquat', 'Mango', 'Plum', 'Lychee', 'Banana', 'Durian', 'Fig', 'Guava', 'Pomelo', 'Melon', 'Cherry', 'Kiwi', 'Tangerine', 'Quince', 'Rambutan', 'Apricot', 'Persimmon', 'Coconut', 'Pear'];
+const funnyName = () => VERBS[Math.floor(Math.random() * VERBS.length)] + ' ' + FRUITS[Math.floor(Math.random() * FRUITS.length)];
+function meStatus(text, done) {
+  const el = $('#meStatus'); el.textContent = text || '';
+  el.classList.toggle('text-accent', !!done);
+}
+function pixelateMe() {
+  if (st.meBusy) return;
+  if (!st.stream || !video.videoWidth) { toast('The camera is not on yet'); return; }
+  const name = ($('#meName').value || '').trim() || funnyName();
+  // a portrait crop of the middle of the frame, downscaled: the model only needs the face and clothes
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const cw = Math.min(vw, vh * 0.8), ch = Math.min(vh, cw * 1.25);
+  const cv = document.createElement('canvas'); cv.width = 640; cv.height = Math.round(640 * ch / cw);
+  const x = cv.getContext('2d');
+  if (st.mirror || st.facing === 'user') { x.translate(cv.width, 0); x.scale(-1, 1); }
+  x.drawImage(video, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, cv.width, cv.height);
+  const photo = cv.toDataURL('image/jpeg', 0.88);
+  st.meBusy = true;
+  meStatus('Sent off! Drawing you takes about a minute — put the phone down, ' + name + ' drops in when ready.', false);
+  send({ t: 'pixelate', name, photo });
+  prefs.set('name', name);
+  haptic(20);
+  setTimeout(() => { if (st.meBusy) { st.meBusy = false; meStatus('That took too long — try again.', false); } }, 150000);
+}
+function renderRoster() {
+  const box = $('#meRoster'); if (!box) return;
+  box.innerHTML = '';
+  const d = st.deck; if (!d || !d.people) return;
+  for (const p of d.people) {
+    const active = (d.peopleActive || []).includes(p.id);
+    box.append(h('span', { class: 'px-2.5 py-1 rounded-lg border text-[12px] ' + (active ? 'border-accent text-accent' : 'border-line text-ink-dim') + (p.id === st.myId ? ' font-bold' : ''), text: (p.id === st.myId ? '★ ' : '') + p.name + (active ? '' : ' (off)') }));
+  }
+}
+
 // ------------------------------------------------------------- queue view ---
 let queueShape = '';
 function renderQueue() {
@@ -825,6 +868,10 @@ $('#bCam').onclick = () => (st.stream ? flipCamera() : startCamera());
 $('#bAlign').onclick = () => (st.aligning ? leaveAlign(true) : enterAlign());
 $('#bTrack').onclick = () => (st.tracking ? stopTracking() : startTracking());
 $('#bMore').onclick = () => { $('#sheet').hidden = !$('#sheet').hidden; };
+$('#meGo').onclick = () => pixelateMe();
+$('#meDice').onclick = () => { $('#meName').value = funnyName(); haptic(8); };
+$('#meFlip').onclick = () => flipCamera();
+$('#meName').value = st.name || '';
 $('#bSheetClose').onclick = () => { $('#sheet').hidden = true; };
 $('#bAuto').onclick = () => findMarkers(false);
 $('#bAlignCancel').onclick = () => leaveAlign(true);
@@ -857,7 +904,5 @@ if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 }
 connect();
 setView(st.view);
-requestAnimationFrame(() => positionNavGlow());
-setTimeout(positionNavGlow, 300);
 ui();
 requestAnimationFrame(loop);

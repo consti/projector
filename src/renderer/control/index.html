@@ -24,6 +24,7 @@
     <input type="range" id="tVol" min="0" max="100" value="100" style="width:70px">
     <span id="nowTitle" class="hint"></span>
     <span class="grow"></span>
+    <label class="tog" id="tAi" title="AI steers the effects (Setup → AI)"><input type="checkbox"><span class="sw"></span><span class="tl">AI</span></label>
     <label class="tog" id="oProj" title="Projector output window"><input type="checkbox"><span class="sw"></span><span class="tl">Projector</span></label>
     <label class="tog" id="oTv" title="TV output window"><input type="checkbox"><span class="sw"></span><span class="tl">TV</span></label>
     <label class="tog danger" id="gBlack" title="Blackout (B)"><input type="checkbox"><span class="sw"></span><span class="tl">Blackout</span></label>
@@ -42,6 +43,9 @@
     <button class="railBtn" data-view="library" title="Library">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="7" height="14" rx="1"/><rect x="13" y="5" width="7" height="9" rx="1"/><path d="M13 17h7"/></svg>
       <span>Library</span></button>
+    <button class="railBtn" data-view="people" title="Pixel people">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="7" r="3"/><path d="M3 20v-1a6 6 0 0112 0v1"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 20v-1a4.5 4.5 0 016 0v1"/></svg>
+      <span>People</span></button>
     <span class="railGap"></span>
     <button class="railBtn" data-view="output" title="Outputs &amp; setup">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></svg>
@@ -127,6 +131,11 @@
     <!-- LIBRARY view -->
     <section class="view" id="vLibrary" hidden>
       <div id="libraryView"></div>
+    </section>
+
+    <!-- PEOPLE view: the pixel people roster -->
+    <section class="view" id="vPeople" hidden>
+      <div id="peopleView"></div>
     </section>
 
     <!-- SETUP view: outputs, wall setups, camera, phone -->

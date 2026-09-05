@@ -17,8 +17,10 @@ import { mirror, room, burn } from './illusion.mjs';
 import { shadows, extrude, aura, stagelights, neon, fieldlines, shockwave, glassrim, plasma, frost, contour } from './shapes.mjs';
 import { halftone, ascii, eightbit, painterly, thermal, stainedglass } from './look.mjs';
 import tetris from './tetris.mjs';
+import { aitext, aidream } from './ai.mjs';
+import { people } from './people.mjs';
 import { reaction, life, rule, coral, symmetry, sprawl, aleph, pointcloud, plexus, digits, treemap, quasicrystal,
-  interference, weave, flowlines, moire, joyplot, parallax, circular, dust, bars, etching, polyhedra } from './generative.mjs';
+  interference, weave, flowlines, moire, joyplot, ringrows, parallax, circular, dust, bars, etching, polyhedra } from './generative.mjs';
 
 export const EFFECTS = [
   balls, shapes, emoji, water, smoke, fire, ink, snow, rain, sand, ripples,
@@ -28,6 +30,8 @@ export const EFFECTS = [
   synthwave, vhs, glitch,
   halftone, ascii, eightbit, painterly, thermal, stainedglass,
   reaction, life, rule, coral, symmetry, sprawl, aleph, pointcloud, plexus, digits, treemap, quasicrystal,
-  interference, weave, flowlines, moire, joyplot, parallax, circular, dust, bars, etching, polyhedra,
+  interference, weave, flowlines, moire, joyplot, ringrows, parallax, circular, dust, bars, etching, polyhedra,
   shadows, extrude, aura, fieldlines, shockwave, glassrim, plasma, frost, contour, stagelights, neon,
+  aitext, aidream,
+  people,
 ];

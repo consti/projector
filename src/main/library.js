@@ -167,6 +167,9 @@ class Library extends EventEmitter {
           file: null, width: 0, height: 0, fps: 0, vcodec: null, acodec: null, filesize: 0,
           trim: opts.trim || null, crop: opts.crop || null, sponsor: opts.sponsor !== false,
           sponsorSkips: null, addedAt: Date.now(),
+          // a pre-download of something that was streamed: not part of the
+          // library until it is kept, and pruned when there are too many
+          cache: !!opts.cache,
         };
         this.items.set(id, entry);
         this.queue.push(id);
@@ -176,6 +179,29 @@ class Library extends EventEmitter {
     this._changed();
     this._pump();
     return added;
+  }
+
+  /** A cached pre-download becomes a proper library entry. */
+  keep(id) {
+    const e = this.items.get(id); if (!e) return null;
+    e.cache = false; e.addedAt = Date.now();
+    this._changed(e);
+    return this.serialize(e);
+  }
+
+  /** The entry for a playlist item (by video id, else url), if any. */
+  entryFor(item) {
+    if (!item) return null;
+    if (item.libId && this.items.has(item.libId)) return this.items.get(item.libId);
+    if (item.id && this.items.has(item.id)) return this.items.get(item.id);
+    if (item.url) for (const e of this.items.values()) if (e.url === item.url) return e;
+    return null;
+  }
+
+  /** Keep the cache at `max` finished pre-downloads: the oldest go first. */
+  pruneCache(max = 25) {
+    const cached = [...this.items.values()].filter((e) => e.cache && e.status === 'ready').sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
+    while (cached.length > max) this.remove(cached.shift().id);
   }
 
   update(id, patch) {
@@ -268,6 +294,7 @@ class Library extends EventEmitter {
     try { if (e.sponsor) e.sponsorSkips = await this.fetchSponsor(e.id); } catch {}
 
     e.status = 'ready';
+    if (e.cache) setTimeout(() => this.pruneCache(), 100);
     e.downloadedAt = Date.now();
     this._changed(e);
     this.emit('ready', e.id);

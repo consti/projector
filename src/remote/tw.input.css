@@ -42,6 +42,9 @@ body.mirror #v, body.mirror #ov { transform: scaleX(-1); }
 body.aligning #ov { pointer-events: auto; }
 body.control #v, body.control #ov, body.control #camScrim { opacity: 0; pointer-events: none; }
 body.control #msg, body.control #bottom, body.aligning #bottom { display: none; }
+/* the Me tab keeps the camera up behind its card but hides the tracking chrome */
+body.me #bottom, body.me #status, body.me #alignBar { display: none; }
+body.me #ov { opacity: 0; }
 body.aligning #viewSeg { opacity: 0; pointer-events: none; }
 
 [hidden] { display: none !important; }

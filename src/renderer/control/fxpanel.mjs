@@ -69,6 +69,9 @@ export const SCENES = [
   { name: 'Plasma', layers: [['plasma', {}], ['neon', { glow: 0.5, dim: 0, picEdges: 0, double: 0, width: 0.002 }]] },
   { name: 'Frost', layers: [['frost', {}]], note: 'Ice creeps out of every shape, then melts back.' },
   { name: 'Contour map', layers: [['contour', {}]] },
+  { name: 'Subtitled by a poet', layers: [['aitext', {}]], note: 'Needs AI on in Setup: each frame is read ahead and captioned as it arrives.' },
+  { name: 'Pixel party', layers: [['people', {}], ['confetti', { rate: 6 }]], note: 'The pixel people drop in and dance; pixelate yourself on the phone (F4 Me).' },
+  { name: 'Dreamt in oils', layers: [['aidream', { mix: 0.85 }], ['aitext', { font: 'gothic', place: 'centre', align: 'centre', size: 0.05, box: 0 }]], note: 'Needs AI on: frames re-painted and captioned.' },
 
   // --- generative (after the Max Cooper videos) ---------------------------------
   { name: 'Order from chaos', layers: [['reaction', {}]], note: 'Reaction-diffusion grows out of the film’s highlights.' },
@@ -83,7 +86,16 @@ export const SCENES = [
   { name: 'Woven', layers: [['weave', {}]] },
   { name: 'Parallax camera', layers: [['parallax', {}]], note: 'Depth guessed from the picture; the camera follows the pointer.' },
   { name: 'Coral', layers: [['coral', {}]] },
-  { name: 'Unknown pleasures', layers: [['joyplot', {}]] },
+  {
+    name: 'Unknown pleasures', note: 'The spectrum drawn as rows that recede; needs React to sound.',
+    audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.5, exposure: 0, wind: 0 }, globalSrc: 'level' },
+    layers: [['joyplot', {}, { mod: [{ p: 'amp', src: 'level', amt: 0.6 }] }]],
+  },
+  {
+    name: 'Sonar rings', note: 'Rings of sound pulsing out from the centre; needs React to sound.',
+    audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.7, exposure: 0, wind: 0 }, globalSrc: 'level' },
+    layers: [['ringrows', {}, { mod: [{ p: 'amp', src: 'bass', amt: 0.5 }] }]],
+  },
   {
     name: 'Equaliser wall', note: 'Bars of the picture that jump with the bass.',
     audio: { globals: { gravity: 0, timeScale: 0, bloom: 0.6, exposure: 0, wind: 0 }, globalSrc: 'level' },
@@ -157,7 +169,7 @@ export const SCENES = [
   },
 ];
 
-const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'Generative', 'Trippy', 'Retro', 'Look'];
+const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'People', 'Generative', 'Trippy', 'Retro', 'Look', 'AI'];
 
 export function buildFxSection(ui) {
   const P = ui.project();
@@ -170,6 +182,16 @@ export function buildFxSection(ui) {
     ui.toggle('Effects on', () => fx.enabled, (v) => { fx.enabled = v; }),
     ui.toggle('In preview', () => fx.preview !== false, (v) => { fx.preview = v; }),
   ]));
+  if (ui.ai) {
+    const a = ui.ai;
+    const ready = a.status && a.status.hasKey && a.ai.enabled;
+    rows.push(el('div', { class: 'row' }, [
+      ui.toggle('AI steers the effects', () => !!a.ai.steer, (v) => { a.patch({ steer: v }); if (v) a.lastTrack = null; }, { push: false, title: 'The director picks and tunes the stack for each track (Setup → AI)' }),
+      el('button', { class: 'btn sm', text: a.busy ? 'Planning…' : 'Steer now', disabled: a.busy || !ready ? '' : null, onclick: () => a.plan('asked for') }),
+    ]));
+    if (!ready) rows.push(el('div', { class: 'hint', text: 'Turn AI on in Setup (and give it a key) to let the director steer.' }));
+    else if (a.log.length && a.log[0].kind === 'plan') rows.push(el('div', { class: 'hint', text: 'AI: ' + a.log[0].text.split(' — ')[0] }));
+  }
   rows.push(el('div', { class: 'hint', text: 'The stack runs on both walls: the projector (with your shapes) and the TV (plain video, no shapes). Each layer below can be limited to one of them.' }));
   if (!fx.enabled) {
     rows.push(el('div', { class: 'hint', text: 'Physics and simulation layers drawn over the mapped video, in projector space. Everything collides with the shapes you have masked.' }));
@@ -747,4 +769,6 @@ const GROUP_BLURB = {
   Retro: 'Synthwave horizons, worn tape and digital tears.',
   Look: 'Image treatments: print, text, 8-bit, paint, thermal, glass.',
   Generative: 'The picture run through generative systems, after the Max Cooper videos: reaction-diffusion, automata, symmetry operations, infinite zooms, networks, tree maps, weaving.',
+  AI: 'The film read by a model ahead of the playhead and written or painted back over itself. Turn AI on in Setup; the director there can also steer the whole stack.',
+  People: 'Everyone who pixelated themselves on the phone, living on your wall. Manage the roster in People.',
 };

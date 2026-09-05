@@ -99,6 +99,7 @@ export class FxHost {
     }
     try {
       this.system.sync(project, fx, { wall, aspect: opts.aspect, shapes: opts.shapes });
+      this.system.characters = opts.characters || [];
       this.system.setInteractors(this.interactors);
       this.system.setAudio(this.audio);
       const paused = fx.pauseWithVideo && opts.playing === false;

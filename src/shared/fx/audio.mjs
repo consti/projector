@@ -23,9 +23,12 @@ export const SOURCES = [
   ['flux', 'Attack'],
 ];
 
+export const SPECTRUM_N = 48;   // log-spaced bins, 40 Hz .. 16 kHz, each 0..1 with its own adaptive gain
+
 export const EMPTY = Object.freeze({
   level: 0, bass: 0, low: 0, mid: 0, high: 0, air: 0,
   beat: 0, phase: 0, sine: 0.5, flux: 0, onset: false, bpm: 0, live: false,
+  spectrum: Object.freeze(new Array(SPECTRUM_N).fill(0)),
 });
 
 // Hz ranges. Bass is deliberately narrow: it is what a kick actually occupies.
@@ -47,7 +50,9 @@ export class AudioReactor {
     this.prevBins = null;
     this.peaks = { level: 0.15, bass: 0.15, low: 0.15, mid: 0.15, high: 0.15, air: 0.15, flux: 0.02 };
     this.smooth = { level: 0, bass: 0, low: 0, mid: 0, high: 0, air: 0, flux: 0 };
-    this.f = { ...EMPTY };
+    this.f = { ...EMPTY, spectrum: new Array(SPECTRUM_N).fill(0) };
+    this.specPeak = new Float32Array(SPECTRUM_N).fill(0.15);
+    this.specSmooth = new Float32Array(SPECTRUM_N);
     this.onsets = [];
     this.fluxHist = new Float32Array(48);
     this.fluxAt = 0;
@@ -142,6 +147,22 @@ export class AudioReactor {
     }
     raw.level = total / (n - 1);
     raw.flux = flux / Math.sqrt(n);
+
+    // a compact log-spaced spectrum for effects that draw the sound itself
+    // (waveform rows, rings); every bin has its own slow peak so a quiet
+    // top end still moves
+    const spec = this.f.spectrum;
+    for (let b = 0; b < SPECTRUM_N; b++) {
+      const f0 = 40 * Math.pow(16000 / 40, b / SPECTRUM_N), f1 = 40 * Math.pow(16000 / 40, (b + 1) / SPECTRUM_N);
+      const i0 = Math.max(1, Math.floor(f0 / perBin)), i1 = Math.min(n - 1, Math.max(i0, Math.ceil(f1 / perBin)));
+      let s = 0;
+      for (let i = i0; i <= i1; i++) s += this.bins[i];
+      const v = (s / (i1 - i0 + 1) / 255) * gain;
+      this.specPeak[b] = Math.max(v, this.specPeak[b] * (1 - dt * 0.08));
+      const norm = Math.min(1, v / Math.max(0.06, this.specPeak[b]));
+      this.specSmooth[b] += (norm - this.specSmooth[b]) * (norm > this.specSmooth[b] ? attack : release);
+      spec[b] = this.specSmooth[b];
+    }
     const beatFlux = fluxLow / Math.sqrt(Math.max(1, lowCut));
 
     // adaptive gain: track a slowly decaying peak per signal
@@ -208,6 +229,7 @@ export class AudioReactor {
       level: r3(f.level), bass: r3(f.bass), low: r3(f.low), mid: r3(f.mid),
       high: r3(f.high), air: r3(f.air), beat: r3(f.beat), phase: r3(f.phase),
       sine: r3(f.sine), flux: r3(f.flux), onset: f.onset, bpm: f.bpm, live: f.live,
+      spectrum: Array.from(f.spectrum, (v) => Math.round(v * 100) / 100),
     };
   }
 }

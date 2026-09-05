@@ -989,65 +989,210 @@ export const moire = postEffect({
   uniforms(gl, u, p, st, c, color) { gl.uniform1f(u.uPitch, p.pitch); gl.uniform1f(u.uAngle, p.angle); gl.uniform1f(u.uSpin, p.spin); gl.uniform1f(u.uPicture, p.picture); gl.uniform1f(u.uDark, p.dark); color('uCol', p.col); },
 });
 
-// ----------------------------------------------------------------- joyplot --
-// Rows of waveforms: each row is a line displaced by the brightness under it,
-// the rows below hiding the ones behind. (Unknown Pleasures, data as landscape)
-const JOY_FS = `
-uniform float uRows;
-uniform float uAmp;
-uniform float uWeight;
-uniform float uFill;
-uniform vec3 uCol;
-uniform float uPicCol;
-uniform float uBgDim;
-uniform float uScroll;
-float rowY(float r){ return (r + 0.5) / uRows; }
-float curve(float r, float x){
-  float y0 = rowY(r);
-  float yy = y0 + fract(uTime * uScroll * 0.1);
-  float e = 3.0 / uSize.x;
-  float l = 0.0;
-  for (int i = -3; i <= 3; i++) l += luma(texture(uBg, vec2(x + float(i) * e, yy)).rgb) * (4.0 - abs(float(i)));
-  l /= 16.0;
-  return y0 + l * uAmp / uRows * 3.0;
+// -------------------------------------------------------------- rows (sound) --
+// The sound drawn as it happens: each frame the analyser's spectrum becomes a
+// new row, older rows recede — an audio waterfall in the Unknown Pleasures
+// manner. With no live audio the rows read the picture's brightness instead
+// (or both: the spectrum rides on top of the picture).
+function rowsEffect(spec, fs, hooks) {
+  return {
+    ...spec,
+    blend: 'post',
+    create(ctx) {
+      const gl = ctx.gl;
+      const pr = prog(gl, VS_SCREEN, FS_HEAD + GLSL_POST + `uniform sampler2D uHist; uniform float uHistRows; uniform float uHead; uniform float uLive; uniform vec4 uP; uniform vec4 uQ; uniform vec3 uC1;\n` + fs);
+      const N = 48, ROWS = 128;
+      const hist = new Uint8Array(N * ROWS);
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, N, ROWS, 0, gl.RED, gl.UNSIGNED_BYTE, hist);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      const st = { head: 0, acc: 0, live: 0, t: 0, c1: [0, 0, 0], dirty: false };
+      return {
+        st,
+        resize() {},
+        step(dt, w, p) {
+          st.t += dt;
+          const au = w.audio || {};
+          const spec = au.spectrum;
+          st.live += (((au.live && spec) ? 1 : 0) - st.live) * Math.min(1, dt * 3);
+          // one new row every `1/rate` seconds
+          st.acc += dt * (p.rate || 20);
+          while (st.acc >= 1) {
+            st.acc -= 1;
+            st.head = (st.head + 1) % ROWS;
+            const o = st.head * N;
+            for (let i = 0; i < N; i++) hist[o + i] = Math.round(255 * (spec ? (spec[i] || 0) : 0));
+            st.dirty = true;
+          }
+        },
+        draw(c) {
+          const p = c.params;
+          if (st.dirty) { gl.bindTexture(gl.TEXTURE_2D, tex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, ROWS, gl.RED, gl.UNSIGNED_BYTE, hist); st.dirty = false; }
+          c.dst.bind();
+          gl.disable(gl.BLEND);
+          pr.use();
+          bindTex(gl, 0, c.src, pr.u.uBg);
+          bindTex(gl, 1, c.sdfTex, pr.u.uSdf);
+          bindTex(gl, 2, tex, pr.u.uHist);
+          gl.uniform1f(pr.u.uTime, st.t);
+          gl.uniform1f(pr.u.uAspect, c.aspect);
+          gl.uniform1f(pr.u.uOpacity, c.opacity);
+          gl.uniform2f(pr.u.uSize, c.size[0], c.size[1]);
+          gl.uniform2f(pr.u.uCentre, 0.5, 0.5);
+          gl.uniform2f(pr.u.uSdfTexel, c.sdfTexel[0], c.sdfTexel[1]);
+          gl.uniform1f(pr.u.uHistRows, ROWS);
+          gl.uniform1f(pr.u.uHead, (st.head + 0.5) / ROWS);
+          gl.uniform1f(pr.u.uLive, st.live);
+          const P = hooks.uP(p, st), Q = hooks.uQ(p, st);
+          gl.uniform4f(pr.u.uP, P[0], P[1], P[2], P[3]);
+          gl.uniform4f(pr.u.uQ, Q[0], Q[1], Q[2], Q[3]);
+          hexRgb(p.col, st.c1);
+          gl.uniform3f(pr.u.uC1, st.c1[0], st.c1[1], st.c1[2]);
+          ctx.screen.draw();
+        },
+        dispose() { gl.deleteTexture(tex); },
+      };
+    },
+  };
 }
+
+// shared: sample the history `age` rows back (0 = newest) at bin position x 0..1
+const GLSL_HIST = `
+float histAt(float x, float age){
+  float row = uHead - age / uHistRows;         // REPEAT wrap
+  return texture(uHist, vec2(clamp(x, 0.01, 0.99), row)).r;
+}
+// the sound or the picture or both, per the source mode in uQ.x
+float heightAt(float x, float age, vec2 picUV){
+  float snd = histAt(x, age);
+  float pic = luma(picClamp(picUV));
+  float mode = uQ.x;                           // 0 sound, 1 picture, 2 both
+  float s = mode < 0.5 ? snd : mode < 1.5 ? pic : max(snd * 1.1, pic * 0.7);
+  // no live audio: fall back to the picture so the rows are never flat
+  return mix(pic, s, mode < 1.5 ? (mode < 0.5 ? uLive : 1.0) : 1.0);
+}`;
+
+const JOY_FS = GLSL_HIST + `
 void main(){
   vec2 uv = vUV;
   vec3 bg = texture(uBg, uv).rgb;
-  vec3 col = bg * (1.0 - uBgDim);
-  float r0 = floor(uv.y * uRows);
-  // walk the rows from the front (bottom) that could cover this pixel
+  float rows = uP.x, amp = uP.y, weight = uP.z, fill = uP.w;
+  float mirror = uQ.y, bgDim = uQ.z, picCol = uQ.w;
+  vec3 col = bg * (1.0 - bgDim);
+  float r0 = floor(uv.y * rows);
   float lit = 0.0, covered = 0.0;
-  for (int k = 0; k < 6; k++) {
+  // walk the rows from the front (bottom) that could cover this pixel
+  for (int k = 0; k < 8; k++) {
     float r = r0 - float(k);
     if (r < 0.0) break;
-    float y = curve(r, uv.x);
+    float y0 = (r + 0.5) / rows;
+    // the front row is the newest sound; rows behind are older
+    float age = (rows - 1.0 - r) * (uHistRows / rows) * 0.9;
+    float x = mirror > 0.5 ? abs(uv.x - 0.5) * 2.0 : uv.x;
+    // smooth across neighbouring bins so the line is a curve, not a staircase
+    float h = 0.0;
+    for (int i = -2; i <= 2; i++) h += heightAt(x + float(i) * 0.008, age, vec2(uv.x + float(i) * 0.004, y0)) * (3.0 - abs(float(i)));
+    h /= 9.0;
+    float y = y0 + h * amp / rows * 3.2;
     float dy = (uv.y - y) * uSize.y;
-    if (uv.y < y && uv.y > rowY(r) - 0.5 / uRows) covered = max(covered, uFill);     // under the curve: filled
-    lit = max(lit, 1.0 - smoothstep(0.0, uWeight, abs(dy)));
+    if (uv.y < y && uv.y > y0 - 0.5 / rows) covered = max(covered, fill);
+    lit = max(lit, 1.0 - smoothstep(0.0, weight, abs(dy)));
   }
-  vec3 lc = mix(uCol, bg * 1.6, uPicCol);
+  vec3 lc = mix(uC1, bg * 1.6, picCol);
   col = mix(col, vec3(0.0), covered * (1.0 - lit));
   col = mix(col, lc, lit);
   o = vec4(mix(bg, col, uOpacity), 1.0);
 }`;
-export const joyplot = postEffect({
+export const joyplot = rowsEffect({
   type: 'joyplot', label: 'Waveform rows', group: 'Generative',
-  hint: 'The picture as rows of waveforms, each line pushed up by the brightness under it and hiding the rows behind: data as a landscape.',
+  hint: 'The sound drawn as rows of waveforms: each new row is the live spectrum, older rows recede behind it. Reads the picture instead (or as well) if you like. Needs "React to sound" for the sound.',
   actions: [],
   params: [
+    S('source', 'Rows show', 'sound', [['sound', 'The sound (falls back to the picture when silent)'], ['picture', 'The picture'], ['both', 'Both']]),
     R('rows', 'Rows', 36, 6, 120, 1),
+    R('rate', 'Rows per second', 18, 2, 60, 1),
     R('amp', 'Height', 1, 0, 3),
     R('weight', 'Line weight (px)', 2.5, 0.5, 8, 0.5),
     R('fill', 'Fill under the lines', 0.9, 0, 1),
+    B('mirror', 'Mirror from the centre', true),
     C('col', 'Line colour', '#ffffff'),
     R('picCol', 'Colour from the picture', 0.3, 0, 1),
     R('bgDim', 'Dim the picture', 0.9, 0, 1),
-    R('scroll', 'Scroll', 0, -2, 2, 0.05),
   ],
 }, JOY_FS, {
-  uniforms(gl, u, p, st, c, color) { gl.uniform1f(u.uRows, Math.round(p.rows)); gl.uniform1f(u.uAmp, p.amp); gl.uniform1f(u.uWeight, p.weight); gl.uniform1f(u.uFill, p.fill); color('uCol', p.col); gl.uniform1f(u.uPicCol, p.picCol); gl.uniform1f(u.uBgDim, p.bgDim); gl.uniform1f(u.uScroll, p.scroll); },
+  uP: (p) => [Math.round(p.rows), p.amp, p.weight, p.fill],
+  uQ: (p) => [p.source === 'sound' ? 0 : p.source === 'picture' ? 1 : 2, p.mirror ? 1 : 0, p.bgDim, p.picCol],
 });
+
+// rings pulsing out from the centre: the newest sound is the innermost ring,
+// each older row one ring further out, so the music travels outwards like a
+// sonar echo (or falls inwards, if you flip it)
+const RING_FS = GLSL_HIST + `
+void main(){
+  vec2 uv = vUV;
+  vec3 bg = texture(uBg, uv).rgb;
+  float rings = uP.x, amp = uP.y, weight = uP.z, fill = uP.w;
+  float inward = uQ.y, bgDim = uQ.z, picCol = uQ.w;
+  vec2 cen = uCentre;
+  vec2 d = (uv - cen) * vec2(1.0, uAspect);
+  float r = length(d) / 0.62;                  // 0 at the centre, ~1 at the corners
+  float ang = atan(d.y, d.x) / TAU + 0.5;      // 0..1 around
+  vec3 col = bg * (1.0 - bgDim);
+  float k0 = floor(r * rings);
+  float lit = 0.0, covered = 0.0;
+  // rings that could cover this pixel: this one and the ones just inside
+  for (int k = 0; k < 6; k++) {
+    float kk = k0 - float(k);
+    if (kk < 0.0) break;
+    float base = (kk + 0.5) / rings;
+    float age = (inward > 0.5 ? (rings - 1.0 - kk) : kk) * (uHistRows / rings) * 0.9;
+    // the spectrum wraps around the ring; mirror it so bass sits at the top and bottom
+    float x = abs(fract(ang + 0.25) * 2.0 - 1.0);
+    float h = 0.0;
+    for (int i = -2; i <= 2; i++) h += heightAt(x + float(i) * 0.01, age, uv + vec2(float(i) * 0.004, 0.0)) * (3.0 - abs(float(i)));
+    h /= 9.0;
+    float rr = base + h * amp / rings * 2.6;
+    float dr = (r - rr) * 0.62 * uSize.x;
+    if (r < rr && r > base - 0.5 / rings) covered = max(covered, fill);
+    lit = max(lit, 1.0 - smoothstep(0.0, weight, abs(dr)));
+  }
+  vec3 lc = mix(uC1, bg * 1.6, picCol);
+  col = mix(col, vec3(0.0), covered * (1.0 - lit));
+  col = mix(col, lc, lit);
+  o = vec4(mix(bg, col, uOpacity), 1.0);
+}`;
+export const ringrows = rowsEffect({
+  type: 'ringrows', label: 'Sonar rings', group: 'Generative',
+  hint: 'The sound as rings pulsing out from the centre: the newest beat is the innermost ring, each older one a ring further out, so the music travels across the wall like a sonar echo. Needs "React to sound".',
+  actions: [],
+  params: [
+    S('source', 'Rings show', 'sound', [['sound', 'The sound (falls back to the picture when silent)'], ['picture', 'The picture'], ['both', 'Both']]),
+    R('rings', 'Rings', 24, 4, 80, 1),
+    R('rate', 'Rings per second', 12, 1, 60, 1),
+    R('amp', 'Height', 1, 0, 3),
+    R('weight', 'Line weight (px)', 2.5, 0.5, 8, 0.5),
+    R('fill', 'Fill between', 0.85, 0, 1),
+    B('inward', 'Fall inwards', false),
+    C('col', 'Line colour', '#ffffff'),
+    R('picCol', 'Colour from the picture', 0.3, 0, 1),
+    R('bgDim', 'Dim the picture', 0.9, 0, 1),
+    R('x', 'Centre x', 0.5, 0, 1), R('y', 'Centre y', 0.5, 0, 1),
+  ],
+}, RING_FS, {
+  uP: (p) => [Math.round(p.rings), p.amp, p.weight, p.fill],
+  uQ: (p) => [p.source === 'sound' ? 0 : p.source === 'picture' ? 1 : 2, p.inward ? 1 : 0, p.bgDim, p.picCol],
+});
+// the rings' centre comes from the x/y params (so the stage handle can place it)
+ringrows.create = ((orig) => (ctx) => {
+  const inst = orig(ctx);
+  const draw = inst.draw;
+  inst.draw = (c) => { c = { ...c }; const p = c.params; inst.st.cx = p.x; inst.st.cy = p.y; draw(c); };
+  return inst;
+})(ringrows.create);
 
 // ---------------------------------------------------------------- parallax --
 // The flat picture given depth and a camera that drifts. Depth is guessed

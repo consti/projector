@@ -133,8 +133,8 @@ export class LibraryView {
   }
 
   _filtered() {
-    let list = this.items;
-    if (this.statusFilter) {
+    let list = this.statusFilter === 'cache' ? this.items.filter((i) => i.cache) : this.items.filter((i) => !i.cache);
+    if (this.statusFilter && this.statusFilter !== 'cache') {
       list = this.statusFilter === 'pending'
         ? list.filter((i) => i.status === 'queued' || i.status === 'downloading' || i.status === 'processing')
         : list.filter((i) => i.status === this.statusFilter);
@@ -173,8 +173,10 @@ export class LibraryView {
   }
 
   _counts() {
-    const c = { total: this.items.length, ready: 0, downloading: 0, processing: 0, queued: 0, error: 0 };
-    for (const i of this.items) c[i.status] = (c[i.status] || 0) + 1;
+    // the cache (pre-downloaded streams) is counted apart and hidden unless asked for
+    const kept = this.items.filter((i) => !i.cache);
+    const c = { total: kept.length, cache: this.items.length - kept.length, ready: 0, downloading: 0, processing: 0, queued: 0, error: 0 };
+    for (const i of kept) c[i.status] = (c[i.status] || 0) + 1;
     c.pending = c.queued + c.downloading + c.processing;
     return c;
   }
@@ -188,6 +190,7 @@ export class LibraryView {
       onclick: () => { this.statusFilter = this.statusFilter === key ? null : key; this._renderGrid(); },
     }, [label + ' ', el('b', { text: String(n) })]);
     this.statusRow.append(chip(null, 'All', c.total, ''));
+    if (c.cache) this.statusRow.append(chip('cache', 'Streamed lately', c.cache, ''));
     if (c.pending) this.statusRow.append(chip('pending', 'Pending', c.pending, 'busy'));
     if (c.downloading + c.processing) {
       // live aggregate progress across the active downloads
@@ -326,6 +329,7 @@ export class LibraryView {
         tagline,
       ]),
       el('div', { class: 'libActions' }, [
+        it.cache ? el('button', { class: 'btn sm', text: '★ Keep', title: 'Make this part of the library', onclick: () => { api.libraryKeep(it.id); this.hooks.toast('Kept'); } }) : null,
         it.status === 'ready' ? el('button', { class: 'btn sm', text: 'Queue', onclick: () => { this.hooks.play([it.id], { play: false }); this.hooks.toast('Queued'); } }) : null,
         it.status === 'ready' ? el('button', { class: 'btn sm', text: 'Edit', onclick: () => this._openEditor(it) }) : null,
         el('button', { class: 'btn sm', text: '⋯', onclick: (e) => this._menu(e, it) }),

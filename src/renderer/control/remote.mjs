@@ -266,6 +266,7 @@ export class RemotePanel {
       case 'pose': this.tracker.feed(msg); break;
       case 'deckSub': api.remoteSend(id, this.catalogMsg()); api.remoteSend(id, this.deckMsg(true)); break;
       case 'ctl': if (this.hooks.control) this.hooks.control(msg.op, msg); break;
+      case 'pixelate': if (this.hooks.pixelate) this.hooks.pixelate(id, msg); break;
       case 'close': if (this.aligningId === id) { this.aligningId = null; this.hooks.setPattern('off'); } break;
     }
   }

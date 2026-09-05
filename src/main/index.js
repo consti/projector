@@ -9,6 +9,8 @@ const { Readable } = require('stream');
 const ytdlp = require('./ytdlp');
 const { RemoteServer } = require('./remote');
 const { Library } = require('./library');
+const { Ai } = require('./ai');
+const { Characters } = require('./characters');
 
 const ROOT = path.join(__dirname, '..');           // .../src
 const isDev = process.argv.includes('--dev');
@@ -54,6 +56,8 @@ let control = null;
 let psbId = null;
 let remote = null;             // phone-camera server, see remote.js
 let library = null;            // downloaded music-video library, see library.js
+let ai = null;                 // OpenAI client, see ai.js
+let characters = null;         // the pixel people roster, see characters.js
 const resolveCache = new Map();
 
 // ------------------------------------------------------------- persistence -
@@ -356,14 +360,25 @@ async function loadIndex(i, autoplay = true, attempt = 0) {
     } else if (item.kind === 'file') {
       source = { kind: 'file', from: 'file', url: 'local://f' + encodeURI(item.path).replace(/#/g, '%23'), title: item.title, audioUrl: null };
     } else {
-      const r = await resolveItem(item);
-      const px = (v) => (v ? 'app://ui/__stream?u=' + encodeURIComponent(v) : null);
-      source = {
-        kind: 'stream', from: 'stream', url: px(r.videoUrl), audioUrl: px(r.audioUrl),
-        previewUrl: px(r.previewUrl),      // small copy for the control window
-        title: r.title || item.title, height: r.height || 0,
-      };
-      item.duration = item.duration || r.duration;
+      // a stream that has been pre-downloaded plays from disk instead
+      const cached = library.entryFor(item);
+      if (cached && cached.status === 'ready' && cached.file) {
+        source = { ...library.playSource(cached.id), from: 'cached', libId: cached.id };
+        item.duration = item.duration || source.duration;
+      } else {
+        const r = await resolveItem(item);
+        const px = (v) => (v ? 'app://ui/__stream?u=' + encodeURIComponent(v) : null);
+        source = {
+          kind: 'stream', from: 'stream', url: px(r.videoUrl), audioUrl: px(r.audioUrl),
+          previewUrl: px(r.previewUrl),      // small copy for the control window
+          title: r.title || item.title, height: r.height || 0,
+        };
+        item.duration = item.duration || r.duration;
+        // and start pulling a copy down for next time (kept only if asked)
+        if (state.settings.preDownload !== false && !cached && item.url) {
+          library.add([item.url], { cache: true }).catch((e) => console.log('[cache]', e.message));
+        }
+      }
     }
   } catch (e) {
     // a dead entry in a long playlist should not stop the show
@@ -1128,6 +1143,20 @@ function ipc() {
   ipcMain.handle('remote:info', () => remote.info());
   ipcMain.handle('remote:stageRect', (e, rect) => { liveStageRect = rect; return true; });
 
+  // --- AI: the renderer asks, main talks to OpenAI with the key it holds
+  ipcMain.handle('ai:status', () => ai.status());
+  ipcMain.handle('ai:spend', () => ai.spend());
+  ipcMain.handle('ai:models', async (e, force) => { try { return await ai.models(!!force); } catch (err) { return { error: err.message, chat: [], image: [], all: [] }; } });
+  ipcMain.handle('ai:respond', async (e, req) => { try { return await ai.respond(req); } catch (err) { return { error: err.message }; } });
+  ipcMain.handle('ai:image', async (e, req) => { try { return await ai.image(req); } catch (err) { return { error: err.message }; } });
+
+  // --- the pixel people
+  ipcMain.handle('characters:list', () => characters.list());
+  ipcMain.handle('characters:generate', async (e, photo, opts) => { try { return await characters.generate(photo, opts || {}); } catch (err) { return { error: err.message }; } });
+  ipcMain.handle('characters:save', (e, rec) => { try { return characters.save(rec); } catch (err) { return { error: err.message }; } });
+  ipcMain.handle('characters:update', (e, id, patch) => characters.update(id, patch || {}));
+  ipcMain.handle('characters:remove', (e, id) => characters.remove(id));
+
   ipcMain.handle('displays:get', () => serializeDisplays());
   ipcMain.handle('outputs:sync', () => { syncOutputs(); return true; });
   ipcMain.handle('outputs:set', (e, role, cfg) => {
@@ -1259,6 +1288,15 @@ function ipc() {
 
   // Put a library item (or several) into the transport playlist.
   ipcMain.handle('library:play', (e, ids, opts) => addLibraryToPlaylist(ids, opts || {}));
+  ipcMain.handle('library:keep', (e, id) => library.keep(id));
+  // "Keep" on a playlist item: a cached copy becomes library, otherwise download it
+  ipcMain.handle('playlist:keep', async (e, index) => {
+    const item = state.playlist.items[index]; if (!item) return null;
+    const have = library.entryFor(item);
+    if (have) { library.keep(have.id); return have.id; }
+    if (item.url) { await library.add([item.url], {}); return true; }
+    return null;
+  });
 
   ipcMain.handle('playlist:set', (e, items, index) => {
     state.playlist.items = items;
@@ -1492,6 +1530,11 @@ app.whenReady().then(async () => {
   handleProtocols();
   setupRemote();
   setupLibrary();
+  ai = new Ai({ root: ROOT, settings: () => (state.settings && state.settings.ai) || {},
+    spendFile: path.join(app.getPath('userData'), 'ai-spend.json'),
+    onSpend: (s) => { if (control && !control.isDestroyed()) control.webContents.send('ai:spend', s); } });
+  characters = new Characters({ dir: path.join(app.getPath('userData'), 'characters'), ai, onChange: (list) => { state.characters = list; pushState(); } });
+  state.characters = characters.list();
   ipc();
   buildMenu();
 
