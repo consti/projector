@@ -46,6 +46,7 @@ const MIME = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
   '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.m4a': 'audio/mp4',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.aac': 'audio/aac', '.ogg': 'audio/ogg',
+  '.wasm': 'application/wasm', '.onnx': 'application/octet-stream',
 };
 const mimeOf = (p) => MIME[path.extname(p).toLowerCase()] || 'application/octet-stream';
 
@@ -914,8 +915,11 @@ function handleProtocols() {
     if (u.pathname === '/__stream') return proxyStream(req, u.searchParams.get('u'));
     let rel = decodeURIComponent(u.pathname);
     if (rel === '/' || rel === '') rel = '/renderer/control/index.html';
-    const file = path.normalize(path.join(ROOT, rel));
-    if (!file.startsWith(ROOT)) return new Response('forbidden', { status: 403 });
+    // the depth model's runtime lives in node_modules: only those two packages are reachable
+    const vendor = /^\/node_modules\/(@huggingface\/transformers|onnxruntime-web)\//.test(rel);
+    const base = vendor ? path.join(ROOT, '..') : ROOT;
+    const file = path.normalize(path.join(base, rel));
+    if (!file.startsWith(base)) return new Response('forbidden', { status: 403 });
     try {
       const data = await fs.promises.readFile(file);
       return new Response(data, { headers: { 'content-type': mimeOf(file) } });
@@ -1152,7 +1156,9 @@ function ipc() {
 
   // --- the pixel people
   ipcMain.handle('characters:list', () => characters.list());
-  ipcMain.handle('characters:generate', async (e, photo, opts) => { try { return await characters.generate(photo, opts || {}); } catch (err) { return { error: err.message }; } });
+  ipcMain.handle('characters:draw', async (e, req) => { try { return await characters.draw(req || {}); } catch (err) { return { error: err.message }; } });
+  ipcMain.handle('characters:wardrobe', async (e, hero, model) => { try { return await characters.wardrobe(hero, model); } catch (err) { return ''; } });
+  ipcMain.handle('characters:base', () => characters.base());
   ipcMain.handle('characters:save', (e, rec) => { try { return characters.save(rec); } catch (err) { return { error: err.message }; } });
   ipcMain.handle('characters:update', (e, id, patch) => characters.update(id, patch || {}));
   ipcMain.handle('characters:remove', (e, id) => characters.remove(id));

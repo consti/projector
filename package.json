@@ -14,5 +14,8 @@
   "devDependencies": {
     "electron": "^38.2.2"
   },
-  "author": "constantin"
+  "author": "constantin",
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  }
 }

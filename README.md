@@ -201,7 +201,7 @@ dividing cellular forms, wave interference, weaving, tree maps:
 | **Moiré** | Two line gratings turning against each other, the picture bending the second: interference that rolls across the film. |
 | **Waveform rows** | The live spectrum as rows of waveforms: each new row is the sound right now, older rows recede behind it (a picture-driven mode as well). Data as a landscape. |
 | **Sonar rings** | The sound as rings pulsing out from the centre: the newest beat the innermost ring, each older one a ring further out. |
-| **Parallax camera** | The flat picture given depth guessed from itself — the floor is near, bright sharp detail is near, dark haze is far — and a camera that drifts around it so near things slide over far things. Follows the pointer. |
+| **Parallax camera** | The flat picture given real depth — **Depth Anything V2** runs on the Mac (transformers.js on WebGPU), reads frames a little ahead of the playhead and hands the depth maps to every wall when the film reaches them — or, without the model, depth guessed from the picture. A camera drifts around it so near things slide over far things; follows the pointer. |
 | **Circular** | Circles packed over the wall, each turning its own copy of the picture at its own speed, breathing with the film. |
 | **Dust** | The picture dissolves into grains that drift up and away, then gathers itself again. |
 | **Bar field** | The picture as columns of bars whose heights read the film's brightness: an equaliser made of the video. Link gain to the bass. |
@@ -611,9 +611,10 @@ without one driving the other. Choose which screen carries the audio under
 Everything here is off until **AI on** in Setup → AI. The key is read from the
 app's settings, the environment, or a `.env` file at the repository root
 (`OPENAI_API_KEY=sk-…`). The models the key can use are listed from the API and
-picked from three menus: the **Director** (plans the show; gpt-5.4 by default),
-the **Reader** (reads frames for captions; gpt-5.4-mini) and the **Painter**
-(re-paints frames and draws the pixel people; gpt-image-1.5). All calls run in
+picked from four menus: the **Director** (plans the show; gpt-5.4 by default),
+the **Reader** (reads frames for captions; gpt-5.4-mini), the **Painter**
+(re-paints frames for AI dream; gpt-image-1.5) and **Sprites** (draws the pixel
+people; gpt-image-2). All calls run in
 the main process; renderers never see the key.
 
 ### The director
@@ -645,6 +646,15 @@ in a named medium (oil, woodcut, stained glass, blueprint …) and cross-faded i
 when their moment comes — slow and costly, one every half minute or so. **AI
 picks the emoji** lets the reader choose the emoji rain's emoji for the scene.
 
+### Depth (local model)
+
+The parallax camera's depth comes from Depth Anything V2 (small), run inside
+the control window through transformers.js — WebGPU where it is available,
+WASM otherwise. The model is fetched from the Hugging Face hub the first time a
+Parallax camera layer asks for it (about 50 MB, then cached) and its runtime is
+served from `node_modules` through the app's own protocol. Nothing else leaves
+the Mac. Setup shows its state and frame rate, with a *Load now* button.
+
 ### Spending
 
 Setup → AI keeps a ledger: every call's token counts priced at list rates, per
@@ -656,20 +666,61 @@ invoice.
 
 Anyone on the phone opens **F4 Me**, frames themselves, keeps or re-rolls the
 suggested name (a verb and a fruit — Juggling Papaya) and presses **Pixelate
-me**. The photo goes to the image model with a style reference and comes back
-as a sprite sheet on a magenta field; the Mac keys the magenta out, re-packs the
-frames, saves the character and, a minute later, adds a second sheet of eight
-dance moves drawn from the first. The phone is told it has been sent off and
-need not wait.
+me**. The phone is told it has been sent off and need not wait.
 
-The **People** view is the roster: an animated preview of each character, a
-name to edit, on/off, which effect sets they belong to, remove, and *Add from
-photo…* for photos on the Mac. The **Pixel people** effect drops everyone who is
-on (and in the active set) into the room — tumbling, screaming, shot in from the
-side or spun in through a time warp — bouncing on landing, then walking the
-tops of your masked shapes and the floor, turning at edges (or not), sitting
-down when it is quiet, dancing to the beat with their own moves, and getting
-knocked flying by a hand or a tracked person.
+A character is drawn the way [pixel-it](../pixel-it) draws them. The photo goes
+to the image model with the house hero as a style reference and comes back as
+one large **hero** sprite on a magenta field — the identity, locked once. The
+Mac keys the magenta out and the person is standing on the wall within a
+minute. Then every animation sheet of **Base**, the house template in
+`src/main/base/`, is drawn "like Base, but this person", all at once: walk;
+run, jump, fall; idle, sit, sleep; crouch, shout, climb; and two rows of dance
+moves. Each comes back as rows of figures spaced however the model felt like,
+so the sprites are found, clustered into rows, split where two were drawn
+touching, and stitched into one sheet with one animation per row and a manifest
+saying which cells are which. A vision model describes the hero's wardrobe in a
+sentence that is pinned into every sheet prompt, since otherwise the model
+dresses the new person in Base's shorts. About a dollar and three minutes a
+person. Characters made before this (the flat 4x2 sheets) still work, with the
+moves they have; **All the moves** on their card draws the rest from their idle
+frame.
+
+The **People** view is the roster: an animated preview of each character
+cycling through its moves, a name to edit, on/off, which effect sets they
+belong to, the moves it has, what it cost, remove, and *Add from photo…* for
+photos on the Mac. The **Pixel people** effect drops everyone who is on (and in
+the active set) into the room — tumbling, screaming, shot in from the side or
+spun in through a time warp — bouncing on landing, then walking and running the
+tops of your masked shapes and the floor, climbing the sides of shapes up and
+down (and reaching up for one hanging just overhead), jumping gaps, peering
+over edges (and sometimes stepping off), sneaking, sitting and napping when it
+is quiet, shouting at the room, dancing to the beat with their own moves, and
+getting knocked flying by a hand or a tracked person. A long fall knocks them
+out for a moment, stars and all. They are quiet by default; *They talk* gives
+them pixel-it's one-liners.
+
+Things pixel-it learnt the hard way are kept: every cell of a sheet has its ink
+box measured once, so each frame is drawn at its own natural height with the
+feet exactly on the ground (the model draws every cell at a slightly different
+scale, and drawing cells raw is what made the walk jitter); airborne frames
+keep their lift above the row's floor; the walk cycle advances with the ground
+covered rather than with time, so the legs never skate; dance frames advance
+with the beat. Sprites are uploaded premultiplied and mipmapped, which is what
+removes the dark fringe and the shimmer around them.
+
+## Playing from the phone
+
+The phone's **F5 Play** tab shows the wall live and is a touch surface: fingers
+on the picture are hands in front of the wall, with a velocity, and push
+whatever effect is running — several fingers at once. Below it, with the Pixel
+people effect on the wall, is a pad for **being one of the pixel people**: pick
+one (your own is starred), hold ◀ ▶ to walk, tick *Run* for a sprint, and the
+moves — jump, dance, sit, sneak, shout, nap, turn, stop. A driven person still
+climbs what is in the way, climbs down or steps off ledges, and goes back to a
+life of its own a moment after the finger lifts. **Say** puts a line in its
+speech bubble, forty characters at most, even when *They talk* is off. Setup →
+Phone has three switches for what phones may do: touch the effects (on),
+play a pixel person (on), make them talk (off).
 
 ## Playlists that keep
 
@@ -677,6 +728,11 @@ Every streamed track is pulled down as it plays (**Pre-download streams** in
 Setup) and played from disk the next time it comes round. The copies live in a
 cache of the last 25 — *Streamed lately* in the Library — and press **★ Keep**
 on a playlist item or a cached card to make one part of the library proper.
+
+## Setup
+
+Setup is laid out as cards in columns — Output, AI, Depth, Wall setups,
+Presets, Keys — rather than one sheet of controls the width of the window.
 
 ## Booleans are switches
 

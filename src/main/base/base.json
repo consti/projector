@@ -1,0 +1,174 @@
+{
+  "name": "Base",
+  "hero": "hero.png",
+  "combined": "combined.png",
+  "created": 1788349174419,
+  "order": [
+    "idle",
+    "walk",
+    "run",
+    "jump",
+    "fall",
+    "climb",
+    "crouch",
+    "sit",
+    "sleep",
+    "shout",
+    "dance",
+    "dance2"
+  ],
+  "trims": {
+    "walk": [
+      2,
+      8
+    ]
+  },
+  "sheets": {
+    "walk": {
+      "label": "walk (from \"Dude running\")",
+      "file": "walk.png",
+      "grid": {
+        "cols": 9,
+        "rows": 1
+      },
+      "rows": [
+        {
+          "key": "walk",
+          "n": 9,
+          "fps": 10,
+          "loop": true,
+          "airborne": false,
+          "desc": "a jogging walk cycle to the right"
+        }
+      ]
+    },
+    "motion": {
+      "label": "run \u00b7 jump \u00b7 fall",
+      "file": "motion.png",
+      "grid": {
+        "cols": 8,
+        "rows": 3
+      },
+      "rows": [
+        {
+          "key": "run",
+          "n": 5,
+          "fps": 10,
+          "loop": true,
+          "airborne": false,
+          "desc": "a full-speed run"
+        },
+        {
+          "key": "jump",
+          "n": 7,
+          "fps": 8,
+          "loop": false,
+          "airborne": true,
+          "desc": "a standing jump: crouch, launch, rise, peak, fall, landing squash, recover"
+        },
+        {
+          "key": "fall",
+          "n": 5,
+          "fps": 8,
+          "loop": true,
+          "airborne": true,
+          "desc": "falling helplessly, flailing"
+        }
+      ]
+    },
+    "rest": {
+      "label": "idle \u00b7 sit \u00b7 sleep",
+      "file": "rest.png",
+      "grid": {
+        "cols": 8,
+        "rows": 3
+      },
+      "rows": [
+        {
+          "key": "idle",
+          "n": 4,
+          "fps": 3,
+          "loop": true,
+          "airborne": false,
+          "desc": "standing at ease"
+        },
+        {
+          "key": "sit",
+          "n": 4,
+          "fps": 2,
+          "loop": true,
+          "airborne": false,
+          "desc": "sitting on the floor"
+        },
+        {
+          "key": "sleep",
+          "n": 4,
+          "fps": 2,
+          "loop": true,
+          "airborne": false,
+          "desc": "lying asleep on the side"
+        }
+      ]
+    },
+    "react": {
+      "label": "crouch \u00b7 shout \u00b7 climb",
+      "file": "react.png",
+      "grid": {
+        "cols": 8,
+        "rows": 3
+      },
+      "rows": [
+        {
+          "key": "crouch",
+          "n": 4,
+          "fps": 6,
+          "loop": true,
+          "airborne": false,
+          "desc": "creeping forward crouched"
+        },
+        {
+          "key": "shout",
+          "n": 4,
+          "fps": 5,
+          "loop": true,
+          "airborne": false,
+          "desc": "shouting angrily"
+        },
+        {
+          "key": "climb",
+          "n": 6,
+          "fps": 6,
+          "loop": true,
+          "airborne": false,
+          "desc": "climbing straight up (no ladder or wall drawn)"
+        }
+      ]
+    },
+    "dance": {
+      "label": "dance \u00b7 disco",
+      "file": "dance.png",
+      "grid": {
+        "cols": 4,
+        "rows": 2
+      },
+      "rows": [
+        {
+          "key": "dance",
+          "n": 4,
+          "fps": 6,
+          "loop": true,
+          "airborne": false,
+          "desc": "a bouncy dance on the spot to a beat: (1) knees bent, both arms thrown up and to the left, big grin; (2) standing tall, both arms up and to the right; (3) hips swung to the left, the far foot lifted a little, arms out to the sides; (4) hips swung to the right, the near foot lifted a little, arms out. At least one foot on the floor in every frame; the head stays at roughly the same height."
+        },
+        {
+          "key": "dance2",
+          "n": 4,
+          "fps": 6,
+          "loop": true,
+          "airborne": false,
+          "desc": "disco moves: (1) one arm pointing straight up disco-style, the other hand on the hip, weight on the back leg; (2) the other arm pointing up, weight on the front leg; (3) mid-spin, seen from the BACK, arms out wide, hair and clothes swinging; (4) a little kick: one leg kicked out forward, both arms pumping, still facing right."
+        }
+      ]
+    }
+  }
+}

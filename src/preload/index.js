@@ -31,7 +31,9 @@ contextBridge.exposeInMainWorld('api', {
   onRemoteMsg: on('remote:msg'),
 
   charactersList: () => ipcRenderer.invoke('characters:list'),
-  charactersGenerate: (photo, opts) => ipcRenderer.invoke('characters:generate', photo, opts),
+  charactersDraw: (req) => ipcRenderer.invoke('characters:draw', req),
+  charactersWardrobe: (hero, model) => ipcRenderer.invoke('characters:wardrobe', hero, model),
+  charactersBase: () => ipcRenderer.invoke('characters:base'),
   charactersSave: (rec) => ipcRenderer.invoke('characters:save', rec),
   charactersUpdate: (id, patch) => ipcRenderer.invoke('characters:update', id, patch),
   charactersRemove: (id) => ipcRenderer.invoke('characters:remove', id),

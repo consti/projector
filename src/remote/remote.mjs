@@ -25,7 +25,8 @@ const st = {
   tracking: false, lastVT: -1, lastSend: 0, poses: [], fpsN: 0, fpsT: 0, fps: 0, latency: null,
   skeleton: prefs.get('skeleton', true), mirror: prefs.get('mirror', false),
   name: prefs.get('name', ''),
-  cfg: { aspect: 9 / 16, calibrated: false, enabled: false, parts: 'body' },
+  cfg: { aspect: 9 / 16, calibrated: false, enabled: false, parts: 'body', touch: true, play: true, say: false, people: false },
+  playId: prefs.get('playId', null), run: false, touches: new Map(), touchTimer: null,
   aligning: false, handles: null, drag: null,
   info: { models: false },
   wake: null,
@@ -58,9 +59,9 @@ function send(m) { if (st.ws && st.ws.readyState === 1) st.ws.send(JSON.stringif
 
 function onMessage(m) {
   switch (m.t) {
-    case 'config': Object.assign(st.cfg, m); ui(); break;
+    case 'config': Object.assign(st.cfg, m); ui(); if (st.view === 'play') renderPlay(); break;
     case 'catalog': st.catalog = m; renderDeck(); break;
-    case 'deck': st.deck = m; renderDeck(); renderQueue(); renderRoster(); if (st.view === 'queue' && st.deck) updateDeck(); break;
+    case 'deck': st.deck = m; renderDeck(); renderQueue(); renderRoster(); renderPlay(); if (st.view === 'queue' && st.deck) updateDeck(); break;
     case 'frame': onLiveFrame(m); break;
     case 'library': st.library = m.items || []; renderQueue(); break;
     case 'calibOk': leaveAlign(false); toast('Aligned. Now press Track.'); break;
@@ -399,7 +400,7 @@ function meter() {
   if (st.latency != null) bits.push(st.latency + ' ms');
   $('#meter').textContent = bits.join(' · ');
 }
-function showMsg(t, sub) { $('#msgText').textContent = t; $('#msgSub').textContent = sub || ''; if (st.view !== 'control') $('#msg').hidden = false; }
+function showMsg(t, sub) { $('#msgText').textContent = t; $('#msgSub').textContent = sub || ''; if (st.view !== 'control' && st.view !== 'play' && st.view !== 'queue') $('#msg').hidden = false; }
 function hideMsg() { $('#msg').hidden = true; }
 function toast(t, ms = 2600) {
   const el = $('#toast'); el.textContent = t; el.classList.add('on');
@@ -443,7 +444,7 @@ const CX = {
 
 function setView(v) {
   st.view = v; prefs.set('view', v);
-  const panel = v === 'control' || v === 'queue';
+  const panel = v === 'control' || v === 'queue' || v === 'play';
   document.body.classList.toggle('control', panel);   // hides camera chrome for either panel
   document.body.classList.toggle('me', v === 'me');
   $('#me').hidden = v !== 'me';
@@ -457,7 +458,9 @@ function setView(v) {
   const showP = (id, on) => { const p = $(id); if (on) { p.hidden = false; p.classList.remove('panel-enter'); void p.offsetWidth; p.classList.add('panel-enter'); } else p.hidden = true; };
   showP('#deck', v === 'control');
   showP('#queue', v === 'queue');
+  showP('#play', v === 'play');
   if (v === 'control') { send({ t: 'deckSub' }); renderDeck(); }
+  if (v === 'play') { send({ t: 'deckSub' }); playShape = ''; renderPlay(); }
   if (v === 'queue') { send({ t: 'deckSub' }); send({ t: 'ctl', op: 'libSub' }); renderQueue(); }
   syncLiveSub();
   haptic(10);
@@ -466,7 +469,7 @@ function setView(v) {
 
 // Ask the Mac to stream the projection preview only while a panel is showing it.
 function syncLiveSub() {
-  const want = st.connected && (st.view === 'control' || st.view === 'queue');
+  const want = st.connected && (st.view === 'control' || st.view === 'queue' || st.view === 'play');
   if (want === st._liveOn) return;
   st._liveOn = want;
   send({ t: 'ctl', op: 'liveSub', on: want });
@@ -779,6 +782,127 @@ function renderRoster() {
     const active = (d.peopleActive || []).includes(p.id);
     box.append(h('span', { class: 'px-2.5 py-1 rounded-lg border text-[12px] ' + (active ? 'border-accent text-accent' : 'border-line text-ink-dim') + (p.id === st.myId ? ' font-bold' : ''), text: (p.id === st.myId ? '★ ' : '') + p.name + (active ? '' : ' (off)') }));
   }
+}
+
+// -------------------------------------------------------------- play view ---
+// The live picture as a touch surface (fingers become hands that push the
+// effects), and below it the controls of one pixel person: a picker, walk
+// and run left or right (held), moves, and a line to say.
+let playShape = '';
+const MOVES = [['jump', '⤒ Jump'], ['dance', '♪ Dance'], ['sit', 'Sit'], ['crouch', 'Sneak'], ['shout', '! Shout'], ['sleep', 'z Nap'], ['turn', '⇄ Turn'], ['stop', '■ Stop']];
+function playPeople() {
+  const d = st.deck; if (!d || !d.people) return [];
+  const active = new Set(d.peopleActive || []);
+  return d.people.filter((p) => active.has(p.id));
+}
+function renderPlay() {
+  if (st.view !== 'play') return;
+  const root = $('#play');
+  const c = st.cfg;
+  const people = playPeople();
+  if (st.playId && !people.some((p) => p.id === st.playId)) st.playId = null;
+  if (!st.playId) { const mine = people.find((p) => p.id === st.myId); st.playId = mine ? mine.id : (people[0] ? people[0].id : null); }
+  const shape = JSON.stringify([c.touch, c.play, c.say, c.people, st.playId, people.map((p) => p.id + p.name), !!st.deck]);
+  if (shape === playShape) return;
+  playShape = shape;
+  root.innerHTML = '';
+  const wrap = h('div', { class: 'px-3.5 pt-[4.4rem] safe-pb-nav flex flex-col gap-3' });
+  root.append(wrap);
+  if (!st.deck) { wrap.append(h('div', { class: CX.hint + ' text-center pt-8', text: 'Waiting for the app…' })); return; }
+
+  // --- the wall under the finger
+  const img = h('img', { class: 'liveImg absolute inset-0 w-full h-full object-contain hidden', alt: '', decoding: 'async', draggable: 'false' });
+  const noSig = h('div', { class: 'liveNo absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink-dim text-[13px]' },
+    [h('div', { class: 'text-3xl text-white/70', text: '◉' }), h('div', { text: 'Waiting for the projection…' })]);
+  const pad = h('div', { class: 'touchpad relative aspect-video bg-black' }, [img, noSig,
+    h('span', { class: 'liveBadge absolute top-3 left-3 hidden items-center gap-1.5 text-[10px] font-bold tracking-wider text-white bg-black/50 px-2.5 py-1 rounded-full' }, [h('i', { class: 'w-1.5 h-1.5 rounded-full bg-white' }), 'LIVE'])]);
+  if (st.lastFrameUrl) { img.src = st.lastFrameUrl; img.classList.remove('hidden'); noSig.classList.add('hidden'); }
+  bindTouchpad(pad, img);
+  wrap.append(h('div', { class: 'livecard rounded-2xl overflow-hidden bg-black border border-line' + (st.hasFrame ? ' live' : '') }, [pad,
+    h('div', { class: 'px-3 py-2 ' + CX.hint, text: c.touch ? 'Touch the picture: your fingers push the effects like hands in front of the wall. Several fingers at once are fine.' : 'Touching the effects is switched off in the app (Setup → Phone).' })]));
+
+  // --- a pixel person at the controls
+  if (!c.play) { wrap.append(sec('Pixel people', [h('div', { class: CX.hint, text: 'Playing a pixel person is switched off in the app (Setup → Phone).' })])); return; }
+  if (!c.people) { wrap.append(sec('Pixel people', [h('div', { class: CX.hint, text: 'No Pixel people effect on the wall right now. Add it in the Mixer, or ask whoever runs the app.' })])); return; }
+  if (!people.length) { wrap.append(sec('Pixel people', [h('div', { class: CX.hint, text: 'Nobody is on the wall yet. Pixelate yourself under F4 Me.' })])); return; }
+  const chips = h('div', { class: 'flex flex-wrap gap-1.5' }, people.map((p) =>
+    h('button', { class: 'px-3 min-h-[38px] rounded-lg border text-[13px] normal-case ' + (p.id === st.playId ? 'border-accent bg-accent text-black font-semibold' : 'border-line text-ink-dim'),
+      text: (p.id === st.myId ? '★ ' : '') + p.name, onclick: () => { st.playId = p.id; prefs.set('playId', p.id); playShape = ''; renderPlay(); } })));
+  const hold = (label, dir) => {
+    const b = h('button', { class: 'padBtn flex-1 min-h-[76px] rounded-xl bg-surface-2 border border-line text-[26px] grid place-items-center', text: label });
+    const down = (e) => { e.preventDefault(); b.classList.add('held'); st.driveDir = dir; sendDrive(); haptic(8); try { b.setPointerCapture(e.pointerId); } catch {} };
+    const up = () => { if (!b.classList.contains('held')) return; b.classList.remove('held'); if (st.driveDir === dir) { st.driveDir = 0; sendDrive(); } };
+    b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
+    return b;
+  };
+  const runChk = chk('Run', () => st.run, (v) => { st.run = v; sendDrive(); }, 'shrink-0');
+  const moves = h('div', { class: 'grid grid-cols-4 gap-2' }, MOVES.map(([move, label]) =>
+    h('button', { class: 'min-h-[46px] px-1 rounded-lg bg-surface-2 border border-line text-[13px]', text: label, onclick: () => { send({ t: 'act', id: st.playId, move }); haptic(8); } })));
+  const kids = [chips,
+    h('div', { class: 'flex gap-2 items-center' }, [hold('◀', -1), hold('▶', 1), h('div', { class: 'w-[86px]' }, [runChk])]),
+    moves,
+    h('div', { class: CX.hint, text: 'Hold ◀ ▶ to walk (Run for a sprint). They climb what is in the way and step off ledges on their own.' })];
+  if (c.say) {
+    const inp = h('input', { type: 'text', maxlength: '40', placeholder: 'Say something…', enterkeyhint: 'send', class: CX.input + ' flex-1 normal-case' });
+    const go = () => { const t = inp.value.trim(); if (!t) return; send({ t: 'say', id: st.playId, text: t }); inp.value = ''; haptic(10); };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    kids.push(h('div', { class: 'flex gap-2' }, [inp, h('button', { class: BTN + ' shrink-0 !bg-accent !border-transparent !text-black', text: 'Say', onclick: go })]));
+  }
+  wrap.append(sec('Be a pixel person', kids));
+}
+function sendDrive() { if (st.playId) send({ t: 'drive', id: st.playId, dir: st.driveDir || 0, run: !!st.run }); }
+// a held direction is re-sent every half second so a lost packet cannot leave someone walking forever
+setInterval(() => { if (st.view === 'play' && st.driveDir) sendDrive(); }, 500);
+
+/** Fingers on the live picture → normalized wall coordinates, streamed at ~30 Hz while any finger is down. */
+function bindTouchpad(pad, img) {
+  const fitRect = () => {
+    // the image is object-fit: contain inside the pad
+    const r = pad.getBoundingClientRect();
+    const iw = img.naturalWidth || 16, ih = img.naturalHeight || 9;
+    const s = Math.min(r.width / iw, r.height / ih);
+    const w = iw * s, hh = ih * s;
+    return { x: r.left + (r.width - w) / 2, y: r.top + (r.height - hh) / 2, w, h: hh };
+  };
+  const pos = (e) => { const f = fitRect(); return { x: (e.clientX - f.x) / f.w, y: (e.clientY - f.y) / f.h }; };
+  const flush = () => {
+    if (!st.cfg.touch) return;
+    const now = performance.now();
+    const pts = [];
+    for (const t of st.touches.values()) {
+      const dt = Math.max(0.016, (now - t.at) / 1000);
+      pts.push({ x: r3(t.x), y: r3(t.y), vx: r2(t.vx), vy: r2(t.vy), down: true });
+      if (now - t.at > 100) { t.vx *= 0.5; t.vy *= 0.5; }
+    }
+    send({ t: 'touch', pts });
+  };
+  const start = () => { if (!st.touchTimer) st.touchTimer = setInterval(flush, 33); };
+  const stop = () => { if (st.touchTimer && !st.touches.size) { clearInterval(st.touchTimer); st.touchTimer = null; send({ t: 'touch', pts: [] }); } };
+  const ring = (id) => { let r = pad.querySelector(`[data-ring="${id}"]`); if (!r) { r = h('div', { class: 'ring', 'data-ring': id }); pad.append(r); } return r; };
+  pad.addEventListener('pointerdown', (e) => {
+    if (!st.cfg.touch) { toast('Touching the effects is off in the app'); return; }
+    e.preventDefault();
+    const p = pos(e);
+    st.touches.set(e.pointerId, { x: p.x, y: p.y, vx: 0, vy: 0, at: performance.now() });
+    const r = ring(e.pointerId); r.style.left = e.clientX - pad.getBoundingClientRect().left + 'px'; r.style.top = e.clientY - pad.getBoundingClientRect().top + 'px';
+    try { pad.setPointerCapture(e.pointerId); } catch {}
+    start(); flush(); haptic(6);
+  });
+  pad.addEventListener('pointermove', (e) => {
+    const t = st.touches.get(e.pointerId); if (!t) return;
+    e.preventDefault();
+    const p = pos(e), now = performance.now(), dt = Math.max(0.008, (now - t.at) / 1000);
+    t.vx = t.vx * 0.4 + ((p.x - t.x) / dt) * 0.6; t.vy = t.vy * 0.4 + ((p.y - t.y) / dt) * 0.6;
+    t.x = p.x; t.y = p.y; t.at = now;
+    const r = ring(e.pointerId); const b = pad.getBoundingClientRect(); r.style.left = e.clientX - b.left + 'px'; r.style.top = e.clientY - b.top + 'px';
+  });
+  const end = (e) => {
+    if (!st.touches.has(e.pointerId)) return;
+    st.touches.delete(e.pointerId);
+    const r = pad.querySelector(`[data-ring="${e.pointerId}"]`); if (r) r.remove();
+    flush(); stop();
+  };
+  pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
 }
 
 // ------------------------------------------------------------- queue view ---

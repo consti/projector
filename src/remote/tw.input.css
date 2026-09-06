@@ -46,6 +46,11 @@ body.control #msg, body.control #bottom, body.aligning #bottom { display: none; 
 body.me #bottom, body.me #status, body.me #alignBar { display: none; }
 body.me #ov { opacity: 0; }
 body.aligning #viewSeg { opacity: 0; pointer-events: none; }
+/* the Play tab: a touch surface must not scroll or zoom under the finger */
+#play .touchpad { touch-action: none; user-select: none; -webkit-user-select: none; }
+#play .padBtn { touch-action: none; user-select: none; -webkit-user-select: none; }
+#play .padBtn.held { background: #ffff55; color: #000000; }
+#play .ring { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border: 3px double #55ffff; border-radius: 9999px; pointer-events: none; }
 
 [hidden] { display: none !important; }
 

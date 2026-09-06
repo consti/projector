@@ -43,6 +43,7 @@
     </div>
   </main>
   <main id="queue" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
+  <main id="play" class="fixed inset-0 z-10 overflow-y-auto no-scrollbar" hidden></main>
 
   <div id="msg" class="fixed inset-0 z-[15] flex flex-col items-center justify-center gap-3 px-10 text-center">
     <div class="w-16 h-16 rounded-2xl bg-white/[0.06] border border-white/20 flex items-center justify-center text-white text-3xl">▶</div>
@@ -97,6 +98,10 @@
     <button data-view="me" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a7 7 0 0114 0v1"/></svg>
       <span class="text-[13px] font-semibold">F4 Me</span>
+    </button>
+    <button data-view="play" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="7" width="19" height="11" rx="3"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="16" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="13.5" r="1" fill="currentColor" stroke="none"/></svg>
+      <span class="text-[13px] font-semibold">F5 Play</span>
     </button>
     <button data-view="queue" class="flex-1 h-[58px] rounded-xl flex flex-col items-center justify-center gap-1 text-ink-faint">
       <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h11M4 17h7"/><path d="M19 10v7.5" stroke-linecap="round"/><circle cx="17.2" cy="17.8" r="1.8" fill="currentColor" stroke="none"/><path d="M19 10l2.4-.7V7l-2.4.7z" fill="currentColor" stroke="none"/></svg>

@@ -100,9 +100,9 @@ export class AiDirector {
     key.onchange = () => { this.patch({ apiKey: key.value.trim() }); setTimeout(() => this.refresh(true), 300); };
     rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'API key' }), key]));
 
-    const modelRow = (label, k, list, hint) => {
+    const modelRow = (label, k, list, hint, def) => {
       const sel = el('select', {});
-      const cur = a[k];
+      const cur = a[k] || def;
       const opts = (list && list.length) ? list.slice() : [];
       if (cur && !opts.includes(cur)) opts.unshift(cur);
       if (!opts.length) opts.push(cur || '');
@@ -111,9 +111,10 @@ export class AiDirector {
       sel.onchange = () => this.patch({ [k]: sel.value });
       return el('div', { class: 'ctl wide', title: hint }, [el('label', { text: label }), sel]);
     };
-    rows.push(modelRow('Director', 'textModel', this.models && this.models.chat, 'Plans the show: tool calls and a little reasoning. gpt-5.4 by default.'));
-    rows.push(modelRow('Reader', 'visionModel', this.models && this.models.chat, 'Reads frames for captions, every few seconds — quick and cheap. gpt-5.4-mini by default.'));
-    rows.push(modelRow('Painter', 'imageModel', this.models && this.models.image, 'Re-paints frames for AI dream. gpt-image-1.5 by default.'));
+    rows.push(modelRow('Director', 'textModel', this.models && this.models.chat, 'Plans the show: tool calls and a little reasoning. gpt-5.4 by default.', 'gpt-5.4'));
+    rows.push(modelRow('Reader', 'visionModel', this.models && this.models.chat, 'Reads frames for captions, every few seconds — quick and cheap. gpt-5.4-mini by default.', 'gpt-5.4-mini'));
+    rows.push(modelRow('Painter', 'imageModel', this.models && this.models.image, 'Re-paints frames for AI dream. gpt-image-1.5 by default.', 'gpt-image-1.5'));
+    rows.push(modelRow('Sprites', 'spriteModel', this.models && this.models.image, 'Draws the pixel people: a hero and six animation sheets per person. gpt-image-2 by default.', 'gpt-image-2'));
     rows.push(el('div', { class: 'hint', text: this.models
       ? `${this.models.chat.length} chat and ${this.models.image.length} image models on this key.`
       : 'Models are listed from the API once a key is found.' }));

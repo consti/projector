@@ -11,6 +11,7 @@ import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
 import { LibraryView } from '/renderer/control/library.mjs';
 import { AiDirector } from '/renderer/control/ai.mjs';
+import { DepthSource } from '/renderer/control/depth.mjs';
 import { REGISTRY as FX_REGISTRY, QUALITY, withDefaults, PALETTE_MODES } from '/shared/fx/system.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
@@ -177,6 +178,16 @@ function pumpInteractors() {
       parts: fx.interact.phoneParts || 'body',
     });
     if (blobs.length) { list = list.concat(blobs); phonePeople = remote.tracker.people.length; }
+  }
+
+  // phones: fingers on the live picture
+  if (fx.enabled && (!S || !S.settings || S.settings.phoneTouch !== false)) {
+    const blobs = remote.touchInteractors({
+      aspect: fxAspect(),
+      radius: fx.interact && fx.interact.radius || 0.07,
+      strength: (fx.interact && fx.interact.strength == null ? 1 : fx.interact.strength),
+    });
+    if (blobs.length) list = list.concat(blobs);
   }
 
   fxHost.setInteractors(list);
@@ -347,6 +358,19 @@ const remote = new RemotePanel({
   deck: () => deckState(),
   catalog: () => deckCatalog(),
   control: (op, a) => remoteControl(op, a),
+  // a phone at the controls of a pixel person (Setup → Phone decides what it may do)
+  play: (id, msg) => {
+    const st = (S && S.settings) || {};
+    if (st.phonePlay === false) return;
+    if (msg.t === 'say' && !st.phoneSay) return;
+    const c = (S && S.characters || []).find((x) => x.id === msg.id);
+    if (!c) return;
+    const arg = msg.t === 'drive' ? { id: c.id, dir: Number(msg.dir) || 0, run: !!msg.run }
+      : msg.t === 'act' ? { id: c.id, move: String(msg.move || '').slice(0, 12), which: msg.which }
+      : { id: c.id, text: String(msg.text || '').replace(/\s+/g, ' ').trim().slice(0, 40) };
+    if (msg.t === 'say' && !arg.text) return;
+    for (const L of (project.fx && project.fx.layers) || []) if (L.type === 'people' && L.enabled !== false) fxAction(L.id, msg.t, arg);
+  },
   // a phone pixelating its owner: make the character, tell the phone how it goes
   pixelate: (id, msg) => {
     const name = (msg.name || '').trim().slice(0, 40) || funnyName();
@@ -544,6 +568,34 @@ const ai = new AiDirector({
 });
 ai.refresh(false);
 
+// real depth for the parallax camera, read in this window and relayed to every wall
+const depth = new DepthSource({
+  state: () => S,
+  project: () => project,
+  fxAction: (id, name, arg) => fxAction(id, name, arg),
+  toast,
+  note: (t) => ai.note('depth', t),
+});
+
+function depthSection() {
+  const rows = [];
+  const status = el('div', { class: 'hint' });
+  const show = () => {
+    const st = depth.status;
+    status.textContent = st === 'ready' ? `Depth Anything V2 small is loaded on ${depth.device}${depth.fps ? ` · about ${depth.fps} frames/s` : ''}. It runs while a Parallax camera layer is in the stack.`
+      : st === 'loading' ? `Loading the depth model${depth.progress ? ` (${depth.progress}%)` : '…'}`
+      : st === 'error' ? 'The depth model failed: ' + depth.error
+      : 'Not loaded. It loads on its own the first time a Parallax camera layer asks for it (about 50 MB, fetched once and kept).';
+  };
+  frameUpdaters.push(show); show();
+  rows.push(status);
+  rows.push(el('div', { class: 'row' }, [
+    el('button', { class: 'btn sm', text: 'Load now', onclick: () => depth.load() }),
+  ]));
+  rows.push(el('div', { class: 'hint', text: 'A second copy of the video runs a little ahead of the playhead; each frame’s depth is read by the model and handed to the parallax layers when the film reaches it, on every wall. Nothing leaves this Mac.' }));
+  return section('Depth (local model)', rows);
+}
+
 // ---------------------------------------------------------------- people ----
 const peopleView = new PeopleView($('#peopleView'), {
   el, toast,
@@ -579,9 +631,10 @@ function toggleDiscover() {
 async function refreshPlaylists() {
   const { items, current } = await api.playlistsList();
   const sel = $('#plLoad');
-  sel.innerHTML = '<option value="">Playlists…</option>';
+  sel.innerHTML = '<option value="">Saved playlists…</option>';
   for (const pl of items) sel.appendChild(el('option', { value: pl.name, text: `${pl.name} (${pl.count})` }));
-  if (current) sel.value = current;
+  if (current && !items.some((pl) => pl.name === current)) sel.appendChild(el('option', { value: current, text: current }));
+  sel.value = current || '';
 }
 $('#plSave').onclick = async () => {
   const name = await promptModal('Name this playlist');
@@ -597,6 +650,16 @@ $('#plLoad').onchange = async (e) => {
   toast('Loaded ' + name + ' (' + n + ')');
 };
 $('#plDiscover input').onchange = () => toggleDiscover();
+// what phones may do: push the effects with a finger, take over a pixel person, make it talk
+for (const [id, key] of [['#phTouch', 'phoneTouch'], ['#phPlay', 'phonePlay'], ['#phSay', 'phoneSay']]) {
+  const inp = $(id + ' input'); if (!inp) continue;
+  inp.onchange = () => api.patchState({ settings: { [key]: inp.checked } });
+}
+function syncPhoneSwitches() {
+  const st = (S && S.settings) || {};
+  const set = (id, v) => { const inp = $(id + ' input'); if (inp && inp !== document.activeElement) inp.checked = v; };
+  set('#phTouch', st.phoneTouch !== false); set('#phPlay', st.phonePlay !== false); set('#phSay', !!st.phoneSay);
+}
 function syncPlaylistTools() {
   const on = !!(S && S.playlist && S.playlist.autoDiscover);
   $('#plDiscover input').checked = on;
@@ -661,10 +724,7 @@ function renderPlaylist(force) {
   plKey = key;
 
   const info = $('#plInfo');
-  if (S.playlist.name && items.length > 1) {
-    info.textContent = S.playlist.name + '  \u00b7  ' + items.length + ' videos';
-    info.classList.add('on');
-  } else info.classList.remove('on');
+  info.textContent = items.length ? `${S.playlist.name ? S.playlist.name + ' \u00b7 ' : ''}${items.length} video${items.length === 1 ? '' : 's'}` : '';
 
   const list = $('#pl');
   $('#plEmpty').style.display = items.length ? 'none' : 'block';
@@ -859,12 +919,10 @@ function buildInspector() {
   for (const sec of buildFxWorldSections(fxUi())) hosts.look.appendChild(sec);
   hosts.look.appendChild(lookSection());
 
+  // two columns of cards: the outputs, walls and presets on the left; the models on the right
   hosts.out.innerHTML = '';
-  hosts.out.appendChild(outputSection());
-  hosts.out.appendChild(ai.section(fxUi()));
-  hosts.out.appendChild(mappingSection());
-  hosts.out.appendChild(presetSection());
-  hosts.out.appendChild(helpSection());
+  hosts.out.appendChild(el('div', { class: 'setupCol' }, [outputSection(), mappingSection(), presetSection()]));
+  hosts.out.appendChild(el('div', { class: 'setupCol' }, [ai.section(fxUi()), depthSection(), helpSection()]));
 
   // restore scroll so touching a layer doesn't jump the panel to the top
   for (const k in hosts) if (hosts[k]) hosts[k].scrollTop = Math.min(scroll[k] || 0, Math.max(0, hosts[k].scrollHeight - hosts[k].clientHeight));
@@ -1502,6 +1560,7 @@ function applyState(s) {
   player.setSource(s.transport.source, { preview: usePreviewStream() });
   renderPlaylist();
   updateTop();
+  syncPhoneSwitches();
   const peopleKey = JSON.stringify(s.characters || []);
   if (peopleKey !== applyState.peopleKey) { applyState.peopleKey = peopleKey; if (!first && currentView === 'people') peopleView.render(); }
   if (first) buildInspector(); else { syncTopSideButtons(); syncInspector(); }
@@ -1556,7 +1615,7 @@ window.__player = player;
 window.__dev = {
   get project() { return project; },
   get state() { return S; },
-  stage, camera, remote, player, fxHost, ai, peopleView,
+  stage, camera, remote, player, fxHost, ai, peopleView, depth,
   fxAction,
   push: pushProject,
   rebuild: buildInspector,
@@ -1613,6 +1672,7 @@ function frame() {
     }
     remote.frame();
     ai.frame();
+    depth.frame();
 
     const t = S.transport;
     const now = targetTime(t);

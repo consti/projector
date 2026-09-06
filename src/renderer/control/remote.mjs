@@ -186,6 +186,7 @@ export class RemotePanel {
   constructor(els, hooks) {
     this.els = els; this.hooks = hooks;
     this.tracker = new PoseTracker();
+    this.touches = new Map();        // client id -> { pts: [{x, y, vx, vy, down}], at }
     this.info = { running: false, urls: [], clients: [] };
     this.qrFor = '';
     this.cfgKey = '';
@@ -267,6 +268,10 @@ export class RemotePanel {
       case 'deckSub': api.remoteSend(id, this.catalogMsg()); api.remoteSend(id, this.deckMsg(true)); break;
       case 'ctl': if (this.hooks.control) this.hooks.control(msg.op, msg); break;
       case 'pixelate': if (this.hooks.pixelate) this.hooks.pixelate(id, msg); break;
+      // fingers on the phone's live picture push the effects like hands in front of the wall
+      case 'touch': this.touches.set(id, { pts: Array.isArray(msg.pts) ? msg.pts.slice(0, 5) : [], at: performance.now() }); break;
+      // a phone at the controls of a pixel person
+      case 'drive': case 'act': case 'say': if (this.hooks.play) this.hooks.play(id, msg); break;
       case 'close': if (this.aligningId === id) { this.aligningId = null; this.hooks.setPattern('off'); } break;
     }
   }
@@ -314,11 +319,37 @@ export class RemotePanel {
 
   config() {
     const fx = this.hooks.fx();
+    const st = this.hooks.settings ? this.hooks.settings() : {};
     return {
       t: 'config', aspect: this.hooks.aspect(), calibrated: this.tracker.calibrated,
       enabled: !!(fx && fx.enabled && fx.interact && fx.interact.camera),
       parts: (fx && fx.interact && fx.interact.phoneParts) || 'body',
+      touch: st.phoneTouch !== false,                 // fingers on the live picture push the effects
+      play: st.phonePlay !== false,                   // a phone can take over a pixel person
+      say: !!st.phoneSay,                             // …and put words in its mouth
+      people: !!(fx && fx.enabled && (fx.layers || []).some((L) => L.type === 'people' && L.enabled !== false)),
     };
+  }
+
+  /**
+   * Fingers on phones as interactors, in world units. A touch is a hand-sized
+   * blob that lasts a moment after the last packet, so a tap still pushes.
+   */
+  touchInteractors(o) {
+    const now = performance.now();
+    const out = [];
+    for (const [id, t] of this.touches) {
+      if (now - t.at > 400) { this.touches.delete(id); continue; }
+      for (const p of t.pts) {
+        if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
+        out.push({
+          x: Math.max(-0.1, Math.min(1.1, p.x)), y: Math.max(-0.1, Math.min(1.1, p.y)) * o.aspect,
+          vx: (p.vx || 0), vy: (p.vy || 0) * o.aspect,
+          r: o.radius || 0.07, strength: o.strength == null ? 1 : o.strength, down: p.down !== false, source: 'touch',
+        });
+      }
+    }
+    return out;
   }
   sendConfig(id) { api.remoteSend(id, this.config()); }
 

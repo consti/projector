@@ -1207,7 +1207,10 @@ uniform float uVertical;
 uniform float uLumaDepth;
 uniform float uZoom;
 uniform float uFocus;
-float depthAt(vec2 uv){
+uniform sampler2D uDepth;   // Depth Anything, near = bright, when uHasDepth
+uniform float uHasDepth;
+uniform float uDepthMix;    // how much of the model's map to use against the guess
+float guessDepth(vec2 uv){
   // 0 = far, 1 = near
   vec3 c = vec3(0.0);
   vec2 e = 6.0 / uSize;
@@ -1219,12 +1222,22 @@ float depthAt(vec2 uv){
   float fromY = (1.0 - uv.y) * uVertical;          // low in the frame is near
   return sat(fromY * 0.6 + fromLuma * 0.6);
 }
+float depthAt(vec2 uv){
+  float g = guessDepth(uv);
+  if (uHasDepth < 0.5) return g;
+  // the map is small: a 4-tap blur keeps its edges from stepping
+  vec2 e = vec2(1.0 / 160.0, 1.0 / 90.0) * 0.5;
+  float m = (texture(uDepth, uv + e).r + texture(uDepth, uv - e).r + texture(uDepth, uv + vec2(e.x, -e.y)).r + texture(uDepth, uv - vec2(e.x, -e.y)).r) * 0.25;
+  return mix(g, m, uDepthMix);
+}
 void main(){
   vec2 uv = vUV;
   vec3 bg = texture(uBg, uv).rgb;
   vec2 cam = uCentre - 0.5;                       // the camera offset: pointer or drift
-  cam += vec2(sin(uTime * uSpeed * 0.7), cos(uTime * uSpeed * 0.5)) * 0.04 * step(0.0, uSpeed);
-  vec2 shift = cam * uAmount * 0.08;
+  // the drift swings the camera a good way across (a fifth of the frame side to side, less up and down)
+  cam += vec2(sin(uTime * uSpeed * 0.7), cos(uTime * uSpeed * 0.5)) * vec2(0.22, 0.12) * step(0.001, uSpeed);
+  // near and far separate by this much of the frame at full camera offset: ~40 px on 1080p at the default
+  vec2 shift = cam * uAmount * 0.16;
   // a hint of dolly: zoom in with the depth
   vec2 p = (uv - 0.5) * (1.0 - uZoom * 0.03 * (0.5 + 0.5 * sin(uTime * uSpeed * 0.3))) + 0.5;
   // parallax mapping: march the relief
@@ -1244,11 +1257,12 @@ void main(){
 }`;
 export const parallax = postEffect({
   type: 'parallax', label: 'Parallax camera', group: 'Generative',
-  hint: 'The flat picture given depth guessed from itself, and a camera that drifts around it so near things slide over far things. Follows the pointer if you let it.',
+  hint: 'The flat picture given depth — read by Depth Anything running on this Mac, or guessed from the picture — and a camera that drifts around it so near things slide over far things. Follows the pointer if you let it.',
   actions: [],
   params: [
-    R('amount', 'Depth', 0.6, 0, 3),
-    R('speed', 'Camera drift', 0.4, 0, 3),
+    S('depth', 'Depth from', 'model', [['model', 'Depth Anything (a model on this Mac)'], ['guess', 'A guess from the picture']]),
+    R('amount', 'Depth', 0.8, 0, 3),
+    R('speed', 'Camera drift', 0.6, 0, 3),
     R('vertical', 'Floor is near', 0.7, 0, 1),
     R('lumaDepth', 'Bright is near', 0.6, 0, 1),
     R('zoom', 'Dolly', 0.5, 0, 1),
@@ -1259,7 +1273,41 @@ export const parallax = postEffect({
   ],
 }, PARALLAX_FS, {
   centre: true,
-  uniforms(gl, u, p) { gl.uniform1f(u.uAmount, p.amount); gl.uniform1f(u.uSpeed, p.speed); gl.uniform1f(u.uVertical, p.vertical); gl.uniform1f(u.uLumaDepth, p.lumaDepth); gl.uniform1f(u.uZoom, p.zoom); gl.uniform1f(u.uFocus, p.focus); },
+  init(ctx) {
+    const gl = ctx.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return { gl, depthTex: tex, hasDepth: false, depthAt: 0, mix: 0 };
+  },
+  // the control window's depth source sends maps as they come due
+  action(st, name, arg) {
+    if (name !== 'depth' || !arg || !arg.data) return;
+    const gl = st.gl;
+    const bin = atob(arg.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    gl.bindTexture(gl.TEXTURE_2D, st.depthTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);      // rows arrive top-down, uv runs up
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, arg.w, arg.h, 0, gl.RED, gl.UNSIGNED_BYTE, bytes);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    st.hasDepth = true; st.depthAt = st.t;
+  },
+  step(st, dt, w, p) {
+    // ease the map in when it starts arriving, and out if it stops (a cut, the model gone)
+    const want = st.hasDepth && p.depth !== 'guess' && st.t - st.depthAt < 3 ? 1 : 0;
+    st.mix += (want - st.mix) * Math.min(1, dt * 3);
+  },
+  uniforms(gl, u, p, st) {
+    gl.uniform1f(u.uAmount, p.amount); gl.uniform1f(u.uSpeed, p.speed); gl.uniform1f(u.uVertical, p.vertical); gl.uniform1f(u.uLumaDepth, p.lumaDepth); gl.uniform1f(u.uZoom, p.zoom); gl.uniform1f(u.uFocus, p.focus);
+    bindTex(gl, 2, st.depthTex, u.uDepth);
+    gl.uniform1f(u.uHasDepth, st.hasDepth ? 1 : 0);
+    gl.uniform1f(u.uDepthMix, st.mix);
+  },
+  dispose(st) { st.gl.deleteTexture(st.depthTex); },
 });
 
 // ---------------------------------------------------------------- circular --

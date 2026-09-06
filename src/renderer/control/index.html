@@ -109,19 +109,18 @@
     <!-- PLAYLIST view -->
     <section class="view" id="vPlaylist" hidden>
       <div class="viewBody" id="plHost">
-        <div id="plHead">
-          <button class="btn grow" id="addFiles">Add files</button>
-          <button class="btn grow" id="addUrl">Add URL</button>
+        <div class="libBar">
+          <div class="libTitle"><span>Playlist</span><span class="libCount hint" id="plInfo"></span></div>
+          <span class="grow"></span>
+          <button class="btn" id="addFiles">Add files…</button>
+          <button class="btn" id="addUrl">Add URL…</button>
+          <select id="plLoad" title="Load a saved playlist"><option value="">Saved playlists…</option></select>
+          <button class="btn" id="plSave" title="Save this playlist">Save list</button>
+          <label class="tog" id="plDiscover" title="Keep discovering related videos and playing"><input type="checkbox"><span class="sw"></span><span class="tl">Auto-discover</span></label>
           <button class="btn icon" id="plClear" title="Clear playlist">&#10005;</button>
         </div>
-        <div id="plTools">
-          <button class="btn sm" id="plSave" title="Save this playlist">Save list</button>
-          <select id="plLoad" title="Load a saved playlist"><option value="">Playlists…</option></select>
-          <label class="tog" id="plDiscover" title="Keep discovering related videos and playing"><input type="checkbox"><span class="sw"></span><span class="tl">Auto-discover</span></label>
-        </div>
-        <div id="plInfo" class="hint"></div>
         <div id="plWrap">
-          <div id="plEmpty" class="hint">Drop video files here, or add a YouTube video / playlist URL.<br><br>Double-click an item to play it. Browse the <b>Library</b> to play downloaded videos.</div>
+          <div id="plEmpty" class="libEmpty hint">Drop video files here, or add a YouTube video / playlist URL.<br><br>Double-click an item to play it. Browse the <b>Library</b> to play downloaded videos.</div>
           <div id="pl"></div>
         </div>
       </div>
@@ -143,27 +142,35 @@
       <div class="viewBody" id="outHost"></div>
       <div class="dock" id="setupSide">
         <div class="previewHead">Live preview</div><div class="stageSlot" data-slot></div>
-        <div id="cam">
-          <div class="row"><span class="hint grow">Continuity camera</span><span class="hint mono" id="camStatus">Off</span></div>
-          <select id="camSelect"><option value="">Select camera</option></select>
-          <div id="camView"><video id="camVideo" muted playsinline></video><div id="camPick"><canvas id="camPickCanvas" style="width:100%;height:100%"></canvas></div></div>
-          <div class="row">
-            <button class="btn grow" id="camAlign">Align to wall</button>
-            <button class="btn" id="camShot" title="Save a still">Snap</button>
-            <button class="btn" id="camOff" title="Stop camera">&#9632;</button>
+        <div class="sec" id="cam">
+          <h3><span>Continuity camera</span><span class="grow"></span><span class="hint mono" id="camStatus">Off</span></h3>
+          <div class="body">
+            <select id="camSelect"><option value="">Select camera</option></select>
+            <div id="camView"><video id="camVideo" muted playsinline></video><div id="camPick"><canvas id="camPickCanvas" style="width:100%;height:100%"></canvas></div></div>
+            <div class="row nowrap">
+              <button class="btn grow" id="camAlign">Align to wall</button>
+              <button class="btn" id="camShot" title="Save a still">Snap</button>
+              <button class="btn icon" id="camOff" title="Stop camera">&#9632;</button>
+            </div>
+            <div class="ctl"><label>Overlay</label><input type="range" id="camOpacity" min="0" max="100" value="50"><span class="val" id="camOpacityV">50%</span></div>
+            <div class="hint" id="camHint">Put your iPhone on a stand facing the wall, pick it above, then "Align to wall".</div>
           </div>
-          <div class="ctl"><label>Overlay</label><input type="range" id="camOpacity" min="0" max="100" value="50"><span class="val" id="camOpacityV">50%</span></div>
-          <div class="hint" id="camHint">Put your iPhone on a stand facing the wall, pick it above, then "Align to wall".</div>
         </div>
-        <div id="phone">
-          <div class="row"><span class="hint grow">Phone remote &amp; camera</span><span class="hint mono" id="phStatus">Off</span></div>
-          <div class="row nowrap">
-            <button class="btn grow" id="phToggle">Share on Wi-Fi</button>
-            <button class="btn" id="phAlign" title="Ask the phone to align its camera to the wall" disabled>Align</button>
-            <button class="btn icon" id="phClear" title="Forget the phone alignment" hidden>&#10005;</button>
+        <div class="sec" id="phone">
+          <h3><span>Phone remote &amp; camera</span><span class="grow"></span><span class="hint mono" id="phStatus">Off</span></h3>
+          <div class="body">
+            <div class="row nowrap">
+              <button class="btn grow" id="phToggle">Share on Wi-Fi</button>
+              <button class="btn" id="phAlign" title="Ask the phone to align its camera to the wall" disabled>Align</button>
+              <button class="btn icon" id="phClear" title="Forget the phone alignment" hidden>&#10005;</button>
+            </div>
+            <div id="phQrWrap" hidden><canvas id="phQr"></canvas><div class="grow"><div class="mono" id="phUrl" title="Click to copy"></div><div class="hint" id="phClients"></div></div></div>
+            <div class="hint" id="phHint"></div>
+            <div class="fxhead">Phones may</div>
+            <label class="tog" id="phTouch" title="Fingers on the phone's live picture push the effects, like hands in front of the wall"><input type="checkbox" checked><span class="sw"></span><span class="tl">Touch the effects</span></label>
+            <label class="tog" id="phPlay" title="A phone can take over one of the pixel people: walk, run, climb, jump, sit, dance, shout"><input type="checkbox" checked><span class="sw"></span><span class="tl">Play a pixel person</span></label>
+            <label class="tog" id="phSay" title="…and put words in its mouth (a speech bubble on the wall)"><input type="checkbox"><span class="sw"></span><span class="tl">Make them talk</span></label>
           </div>
-          <div id="phQrWrap" hidden><canvas id="phQr"></canvas><div class="grow"><div class="mono" id="phUrl" title="Click to copy"></div><div class="hint" id="phClients"></div></div></div>
-          <div class="hint" id="phHint"></div>
         </div>
       </div>
     </section>
