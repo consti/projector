@@ -10,6 +10,15 @@ water that fills the room and flows around your couch, balls that bounce off
 the picture frames, smoke that rolls around them, snow that settles on their
 top edges. See [Effects](#effects).
 
+<img width="1672" height="1112" alt="image" src="https://github.com/user-attachments/assets/f51a0d0d-9c34-4ee2-95ef-ce687772d2d8" />
+
+<img width="1672" height="1112" alt="image" src="https://github.com/user-attachments/assets/0b6f91f8-7cc3-4a86-ad8c-45a99998bad3" />
+
+<img width="1672" height="1112" alt="image" src="https://github.com/user-attachments/assets/a26cd42a-8828-44f5-87fc-8db92b5de2db" />
+
+<img width="1672" height="1112" alt="image" src="https://github.com/user-attachments/assets/2107aac0-8e82-496d-bd1b-1680cf51842b" />
+
+
 ## Run it
 
 ```
