@@ -1,5 +1,6 @@
 node_modules/
 dist/
+bin/
 build/icon.iconset/
 .DS_Store
 *.log

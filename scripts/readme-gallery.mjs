@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// Rewrite the effect gallery in README.md between the gallery markers from the
-// effects registered in src/shared/fx/effects/index.mjs, using the thumbnails
-// captured by scripts/fx-thumbs.mjs. Run after adding an effect.
+// Rewrite the galleries in README.md: the effects between the gallery markers,
+// from the effects registered in src/shared/fx/effects/index.mjs and the
+// thumbnails captured by scripts/fx-thumbs.mjs; and the visuals scenes between
+// the visuals markers, from VISUAL_SCENES and the frames rendered by
+// scripts/visual-thumbs.mjs. Run after adding an effect or a scene.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VISUAL_SCENES } from '../src/shared/visuals.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FX = path.join(ROOT, 'src', 'shared', 'fx', 'effects');
@@ -40,10 +43,23 @@ for (const [g, list] of groups) {
   out += '</tr></table>\n';
 }
 
+// the visuals: one table, four to a row, in the order of the scene menu
+let vis = '\n<table><tr>\n';
+VISUAL_SCENES.forEach(([id, label], i) => {
+  if (i && i % 4 === 0) vis += '</tr><tr>\n';
+  const img = fs.existsSync(path.join(ROOT, 'src/renderer/control/visual-thumbs', id + '.jpg'))
+    ? `<img src="src/renderer/control/visual-thumbs/${id}.jpg" width="220" alt="${label}"><br>` : '';
+  vis += `<td align="center" valign="top">${img}<sub>${label}</sub></td>\n`;
+});
+vis += '</tr></table>\n';
+
 const readme = path.join(ROOT, 'README.md');
 let md = fs.readFileSync(readme, 'utf8');
-const start = '<!-- gallery:start -->', end = '<!-- gallery:end -->';
-if (!md.includes(start)) throw new Error('README has no gallery markers');
-md = md.slice(0, md.indexOf(start) + start.length) + '\n' + out + '\n' + md.slice(md.indexOf(end));
+function splice(start, end, body) {
+  if (!md.includes(start) || !md.includes(end)) throw new Error('README has no ' + start + ' markers');
+  md = md.slice(0, md.indexOf(start) + start.length) + '\n' + body + '\n' + md.slice(md.indexOf(end));
+}
+splice('<!-- gallery:start -->', '<!-- gallery:end -->', out);
+splice('<!-- visuals:start -->', '<!-- visuals:end -->', vis);
 fs.writeFileSync(readme, md);
-console.log('gallery:', order.length, 'effects in', groups.size, 'groups');
+console.log('gallery:', order.length, 'effects in', groups.size, 'groups;', VISUAL_SCENES.length, 'visuals scenes');

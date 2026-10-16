@@ -127,6 +127,12 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .pit .x{opacity:0;color:var(--dim2);flex:none;padding:0 2px}
 .pit:hover .x{opacity:1}
 .pit .x:hover{color:var(--mask)}
+.pit .vis{opacity:0;color:var(--dim2);flex:none;padding:0 2px;cursor:pointer;font-size:13px}
+.pit:hover .vis{opacity:1}
+.pit .vis:hover{color:var(--fg)}
+.pit .vis.on{opacity:1;color:#c8a0ff}
+#tHide{font-size:15px;line-height:1}
+#tHide.on{background:#6a3fb5;border-color:#6a3fb5;color:#fff}
 #plEmpty{line-height:1.6}
 
 /* --- camera --- */
@@ -253,6 +259,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .badge{font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;background:#22262c;color:var(--dim);
   padding:1px 5px;border-radius:4px}
 .badge.lib{background:#123a2a;color:#6fe0a8}
+.badge.vis{background:#2e1f4a;color:#c8a0ff}
 .libTagline{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
 .miniTag{font-size:9.5px;color:var(--accent2);background:#0e2733;padding:1px 5px;border-radius:4px}
 .libActions{display:flex;gap:6px;padding:8px var(--padIn) var(--padIn);margin-top:auto;align-items:center}
@@ -444,3 +451,42 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 #outHost .ctl{grid-template-columns:96px minmax(0,1fr) 42px}
 #outHost .ctl.wide{grid-template-columns:96px minmax(0,1fr)}
 #outHost .hint{max-width:64ch}
+
+/* Visuals view: the scene cards */
+.visLive{position:absolute;inset:0;width:100%;height:100%;display:none}
+.visLive.on{display:block}
+.visScene .fxBadge.now{display:none}
+.visScene.now .fxBadge.now{display:block}
+.visScene .fxBadge.sel{display:none;left:auto;right:8px;background:var(--accent);color:#031425;font-weight:600}
+.visScene.on .fxBadge.sel{display:block}
+.visScene.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.visFor{display:flex;flex-direction:column;gap:var(--gap)}
+.visFor[hidden]{display:none}
+
+/* Apple Music view */
+#musicView{position:absolute;inset:0;background:#0b0c0e;display:flex;flex-direction:column;min-height:0}
+#musicView[hidden]{display:none}
+.musicState{white-space:nowrap}
+.musicState.bad{color:#d98a7a}
+.musicBody{flex:1;display:flex;min-height:0}
+.musicSide{width:260px;flex:none;border-right:1px solid var(--line);overflow-y:auto;padding:6px 0}
+.musicSideHead{padding:10px 14px 4px;text-transform:uppercase;letter-spacing:.06em;font-size:10px}
+.musicPl{display:flex;gap:8px;align-items:center;padding:6px 14px;cursor:pointer;font-size:12.5px}
+.musicPl:hover{background:#15181d}
+.musicPl.on{background:#16344f}
+.musicPl .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.musicPl .c{font-size:10px;color:var(--dim2);font-family:ui-monospace,Menlo,monospace}
+.musicMain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+.musicHead{display:flex;align-items:center;gap:8px;padding:10px var(--pad);border-bottom:1px solid var(--line);min-height:46px;color:var(--dim)}
+.musicHeadTitle{display:flex;gap:10px;align-items:baseline;min-width:0}
+.musicHeadTitle .name{font-size:14px;font-weight:600;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.musicList{flex:1;overflow-y:auto;min-height:0}
+.musicRow{display:flex;gap:10px;align-items:center;padding:6px var(--pad);border-bottom:1px solid #15171b;cursor:default}
+.musicRow:hover{background:#15181d}
+.musicRow .n{width:28px;text-align:right;color:var(--dim2);font-size:10.5px;flex:none}
+.musicRow .tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.musicRow .t{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.musicRow .a{font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.musicRow .d{font-size:10.5px;color:var(--dim2);font-family:ui-monospace,Menlo,monospace;flex:none;width:44px;text-align:right}
+.musicRow .btn.sm{opacity:0;flex:none}
+.musicRow:hover .btn.sm{opacity:1}

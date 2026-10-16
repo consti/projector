@@ -61,6 +61,15 @@ contextBridge.exposeInMainWorld('api', {
   setPlaylist: (items, index) => ipcRenderer.invoke('playlist:set', items, index),
   ytdlpAvailable: () => ipcRenderer.invoke('ytdlp:available'),
 
+  // Apple Music, via the Music app
+  musicStatus: () => ipcRenderer.invoke('music:status'),
+  musicPlaylists: () => ipcRenderer.invoke('music:playlists'),
+  musicTracks: (playlistId) => ipcRenderer.invoke('music:tracks', playlistId),
+  musicForget: () => ipcRenderer.invoke('music:forget'),
+  musicAdd: (tracks, opts) => ipcRenderer.invoke('music:add', tracks, opts),
+  onMusicPcm: on('music:pcm'),
+  onMusicTap: on('music:tap'),
+
   library: () => ipcRenderer.invoke('library:list'),
   libraryAdd: (urls, opts) => ipcRenderer.invoke('library:add', urls, opts),
   libraryUpdate: (id, patch) => ipcRenderer.invoke('library:update', id, patch),

@@ -445,6 +445,134 @@ splashes where you are.
 Press **X** to fire every layer's primary action at once (drop a handful of
 balls, strike lightning, break the picture).
 
+## Visuals instead of the video
+
+Some music videos are not worth looking at. Switch on **Visuals** in the top bar
+and the picture is replaced by generated scenes that move with the sound; the
+video keeps playing, hidden, because it carries the audio and the clock. The
+generated picture goes into the engine exactly where a video frame would, so
+everything else still applies — the wall mapping, the masks, the TV, and any
+effects you stack on top (snow on a fractal, water refracting a laser show).
+
+- **For every track** — the *Visuals* switch in the top bar.
+- **For one video** — press `H` while it plays, the ◐ button next to the title,
+  ◐ on its playlist row, or *Hide the video* in the library editor. The video is
+  remembered by its YouTube id, so this follows it from stream to cache to
+  library.
+
+The **Visuals** view is a catalogue of the scenes, a card each with a captured
+frame; **hover a card and it renders live**, small, to the music that is
+playing. Click one to hold it, or pick **Mix**, which walks every scene in a
+shuffled order, changing every *n* seconds with a three-second cross-fade. The
+panel beside it has the settings: colours come from a palette chosen per
+track, or a fixed one; *Speed* and *Music* set how fast it moves and how hard it
+follows the sound (the audio analysis runs for the visuals even when *React to
+sound* is off). Settings that belong to one scene appear only while that scene
+is chosen: the emoji scenes draw whatever emoji you type, and the train ride
+has the **City** it runs through (glass towers,
+low-rise blocks, a neon megacity, or wireframe), the **Time of day** (dawn to
+night, *Round the clock* to let the day pass as the music plays, or chosen per
+track like the palette), how much **Haze** hangs over it and how high the
+**Line height**: at street level between the buildings, or over the roofs.
+
+| | |
+| --- | --- |
+| **Neon tunnel** | A tube morphing between round and hexagonal, rings flaring on the beat. |
+| **Liquid marble** | Domain-warped noise, warped harder by the bass. |
+| **Fractal kaleidoscope** | A folded "abs(z)/z² − c" fractal, drawn by its orbit traps. |
+| **Spectrum ring** | The spectrum as mirrored bars around a pulsing ring. |
+| **Warp speed** | Star streaks that stretch with the loudness. |
+| **Pulse cells** | Voronoi cells; a different set lights on every beat. |
+| **Synthwave horizon** | Sliced sun, mountains that follow the spectrum, a scrolling grid. |
+| **Lava lamp** | Metaballs with glowing rims. |
+| **Laser show** | Sweeping beams through haze, strobing on the beat. |
+| **Op-art moiré** | Two interfering ring sets, black and colour. |
+| **Mandelbrot zoom** | Dives into famous spots of the set, a new one each time. |
+| **Julia set** | The Julia set as its constant circles the main cardioid. |
+| **Newton fractal** | Relaxed Newton's method on z³ − 1, the relaxation wobbling. |
+| **Burning Ship** | The same dive into the Burning Ship's armada. |
+| **Apollonian gasket** | Circles packed in circles by repeated inversion. |
+| **Lyapunov space** | Where the logistic map settles and where it goes chaotic. |
+| **Quasicrystal** | Seven plane waves: a pattern that never repeats. |
+| **Hypno spiral** | A logarithmic spiral whose stripes flip on the beat. |
+| **Acid plasma** | Posterised, bass-warped plasma. |
+| **Grid shaft** | Falling down a square shaft of grid walls with Menger-carpet windows. |
+| **Mandelbox zoom (3D)** | The golden box: an exponential zoom into its surface. Each dive picks a spot with structure around it (sampled on the CPU) and checks that the camera path stays clear at every depth, and the iteration count rises as it goes deeper so new detail keeps arriving. |
+| **Mandelbulb flight (3D)** | The 3-D Mandelbrot, the camera swooping round it and skimming its surface while the power morphs. |
+| **Menger flythrough (3D)** | An endless flight down the central tunnel of a twisted Menger sponge. |
+| **Fractal nebula (3D)** | A volumetric Kali fractal drifted through. |
+| **Gyroid tunnel (3D)** | A tunnel bored through a gyroid, neon contours racing along it. |
+| **Fractal cathedral (3D)** | A kaleidoscopic IFS with rotations the music keeps turning. |
+| **Sierpinski zoom (3D)** | Self-similar at 2×, so the zoom never restarts. |
+| **Train through the city (3D)** | The view from the front of a train on a viaduct through a city that never ends, after the *Vordhosbn* video. The line curves through a grid of blocks; gantries flare on the beat as they pass, pulses of light run ahead down the rails, each building's windows light up to its own band of the spectrum, traffic streams on the streets below and now and then a train comes the other way. City, hour, haze and height are yours to set. |
+| **Emoji vortex** | Rings of emoji streaming out of the centre on a log-polar grid. |
+| **Emoji wall** | A grid of emoji that bob to their column of the spectrum. |
+
+The 3-D scenes are raymarched at a fraction of the output size and scaled up;
+every scene costs a few milliseconds a frame at 1080p on Apple Silicon.
+Scene choice runs off the media clock and the track, so the projector, the TV
+and the preview change scene together.
+
+### Every scene
+
+One frame of each, as the projector would show it at 1080p, with a loud bar of
+made-up music playing. They are rendered without the app running by
+`npx electron scripts/visual-thumbs.mjs` (which also takes scene names), and
+`node scripts/readme-gallery.mjs` refreshes this gallery.
+
+<!-- visuals:start -->
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/tunnel.jpg" width="220" alt="Neon tunnel"><br><sub>Neon tunnel</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/liquid.jpg" width="220" alt="Liquid marble"><br><sub>Liquid marble</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/kaleido.jpg" width="220" alt="Fractal kaleidoscope"><br><sub>Fractal kaleidoscope</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/spectrum.jpg" width="220" alt="Spectrum ring"><br><sub>Spectrum ring</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/warp.jpg" width="220" alt="Warp speed"><br><sub>Warp speed</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/cells.jpg" width="220" alt="Pulse cells"><br><sub>Pulse cells</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/horizon.jpg" width="220" alt="Synthwave horizon"><br><sub>Synthwave horizon</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/lava.jpg" width="220" alt="Lava lamp"><br><sub>Lava lamp</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/lasers.jpg" width="220" alt="Laser show"><br><sub>Laser show</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/moire.jpg" width="220" alt="Op-art moiré"><br><sub>Op-art moiré</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/mandelbrot.jpg" width="220" alt="Mandelbrot zoom"><br><sub>Mandelbrot zoom</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/julia.jpg" width="220" alt="Julia set"><br><sub>Julia set</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/newton.jpg" width="220" alt="Newton fractal"><br><sub>Newton fractal</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/mandelbox.jpg" width="220" alt="Mandelbox zoom (3D)"><br><sub>Mandelbox zoom (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/mandelbulb.jpg" width="220" alt="Mandelbulb flight (3D)"><br><sub>Mandelbulb flight (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/menger.jpg" width="220" alt="Menger flythrough (3D)"><br><sub>Menger flythrough (3D)</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/shaft.jpg" width="220" alt="Grid shaft"><br><sub>Grid shaft</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/nebula.jpg" width="220" alt="Fractal nebula (3D)"><br><sub>Fractal nebula (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/gyroid.jpg" width="220" alt="Gyroid tunnel (3D)"><br><sub>Gyroid tunnel (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/cathedral.jpg" width="220" alt="Fractal cathedral (3D)"><br><sub>Fractal cathedral (3D)</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/sierpinski.jpg" width="220" alt="Sierpinski zoom (3D)"><br><sub>Sierpinski zoom (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train.jpg" width="220" alt="Train through the city (3D)"><br><sub>Train through the city (3D)</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/apollonian.jpg" width="220" alt="Apollonian gasket"><br><sub>Apollonian gasket</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/burningship.jpg" width="220" alt="Burning Ship"><br><sub>Burning Ship</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/lyapunov.jpg" width="220" alt="Lyapunov space"><br><sub>Lyapunov space</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/quasicrystal.jpg" width="220" alt="Quasicrystal"><br><sub>Quasicrystal</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/hypno.jpg" width="220" alt="Hypno spiral"><br><sub>Hypno spiral</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/acid.jpg" width="220" alt="Acid plasma"><br><sub>Acid plasma</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/emoji.jpg" width="220" alt="Emoji vortex"><br><sub>Emoji vortex</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/emojiwall.jpg" width="220" alt="Emoji wall"><br><sub>Emoji wall</sub></td>
+</tr></table>
+
+<!-- visuals:end -->
+
+The same train ride in four cities at four hours:
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train-lowrise-day.jpg" width="220" alt="Low-rise blocks by day"><br><sub>Low-rise blocks, day</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train-towers-sunset.jpg" width="220" alt="Glass towers at sunset"><br><sub>Glass towers, sunset</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train-neon-dusk.jpg" width="220" alt="Neon megacity at dusk"><br><sub>Neon megacity, dusk</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train-wire-night.jpg" width="220" alt="Wireframe at night"><br><sub>Wireframe, night</sub></td>
+</tr></table>
+
 ## Marking areas to black out
 
 - **+ Mask** drags a rectangle, **+ Shape** clicks a polygon (Enter or click the
@@ -517,6 +645,36 @@ playback** — again without altering the file. Toggle it per video in the edito
 tagged, trimmed and cropped it — with no media. **Import** it on another machine
 and Projector re-downloads everything and re-applies all your edits, so a whole
 curated, cropped library travels as one small file.
+
+## Apple Music
+
+The **Music** view lists the Music app's library: your playlists down the
+side, their songs in the middle, with a search box. **+** puts a song in the
+playlist, **▶** plays it now, and *Add all* / *Play all* take a whole playlist
+(or everything a search found). Songs from Apple Music have no picture, so
+they always play with visuals; stack effects on top as usual.
+
+The Music app does the playing. Apple Music streams are DRM-protected and no
+Electron app can play them itself, so Projector drives Music over Apple
+Events: it tells it which song to play, pauses, seeks and reads the position,
+and the shared clock follows Music rather than the other way round. Play,
+pause and seek in Projector (or on the phone) go to Music; pausing or
+skipping in Music itself is picked up within a second, and a different song
+put on in Music is adopted as the current one. While a song from Music is the
+source, Music's repeat is held at *one* and its shuffle off, so it never runs
+on to a song of its own choosing; your settings come back when the playlist
+moves on to a video, and on quit. The volume slider and mute are passed on to
+Music too.
+
+So that the visuals and effects can hear the music, a small helper
+(`bin/audiotap`, built from `native/audiotap/main.swift` by
+`npm run build:tap`) taps the Music process's output with Core Audio's
+process-tap API and streams it into the control window's analyser. Nothing is
+re-played: the sound still comes out of Music. The first time, macOS asks
+twice: whether Projector may control Music, and whether it may record system
+audio (System Settings → Privacy & Security → Automation, and → Screen & System
+Audio Recording). Songs have to be in your Music library or in a playlist you
+have added, since Apple Events cannot search the catalogue.
 
 ## Phone camera (people push the effects)
 
@@ -761,6 +919,7 @@ layer and mask. The phone shows the same things as `[ ]` / `[X]` check boxes.
 | `Space` | play / pause |
 | `B` | blackout |
 | `G` | wall guides (outlines drawn on the wall itself) |
+| `H` | visuals instead of this video (remembered for it) |
 | arrows | nudge 1px, with `Shift` 10px |
 | `Backspace` | delete point or object |
 | `Cmd`+scroll | zoom, `Alt`+drag pan |
@@ -772,21 +931,27 @@ layer and mask. The phone shows the same things as `[ ]` / `[X]` check boxes.
 src/main/index.js       windows, displays, transport clock, IPC, media proxy
 src/main/ytdlp.js       YouTube resolution (split video+audio, up to 4K)
 src/main/library.js      music-video library: downloads, ffmpeg thumbs/crop, sponsorblock
+src/main/music.js        Apple Music through the Music app: browsing, playing, following its clock, the audio tap
+native/audiotap/         Core Audio process tap: one app's sound on stdout (built to bin/audiotap)
 src/shared/gl-engine.mjs  WebGL2 renderer: warp, edge blend, colour, masks
 src/shared/mat3.mjs     homography maths (square-to-quad, inverse)
 src/shared/mesh.mjs     warp grid, polygon offsetting
 src/shared/player.mjs   clock-driven playback, drift correction
 src/shared/patterns.mjs calibration patterns
+src/shared/visuals.mjs  generated visuals that replace the video (scenes, scheduling)
 src/renderer/control/   the editor UI
 src/renderer/output/    the fullscreen output windows
 src/renderer/control/motion.mjs   camera movement -> interaction blobs
 src/renderer/control/remote.mjs   phone camera panel, alignment, pose -> interactors
 src/renderer/control/qr.mjs       QR encoder for the phone address
 src/renderer/control/library.mjs  the Library manager view and video editor
+src/renderer/control/music.mjs    the Apple Music view: playlists and songs from the Music app
 src/main/remote.js       LAN https + WebSocket server for the phone page
 src/remote/              the page a phone opens: camera, MediaPipe pose, alignment
 src/shared/pose.mjs      body landmarks -> the joints and limbs that push
 scripts/fetch-models.sh  bundle the pose tracker so phones need no internet
+scripts/visual-thumbs.mjs render a frame of every visuals scene for the catalogue and README
+scripts/fx-thumbs.mjs    capture the effect thumbnails and hover clips from the running app
 
 src/shared/fx/system.mjs     the effect stack: layers, clock, compositing, bloom
 src/shared/fx/field.mjs      occluders -> signed distance field + collision triangles

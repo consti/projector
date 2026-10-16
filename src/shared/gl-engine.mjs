@@ -266,6 +266,8 @@ export class Engine {
     this.crop = [0, 0, 1, 1];   // active-picture rect in video uv; full frame by default
     this.sourceSize = [1, 1];
     this.fx = null;                 // optional FxSystem, set by the renderer
+    this.generator = null;          // optional generated picture in place of the video
+    this._mode = 'mapped';
     this._m = new Float32Array(9);
   }
 
@@ -323,6 +325,30 @@ export class Engine {
 
   /** Attach (or detach) the physics/effects stack. */
   setFx(fx) { this.fx = fx; }
+
+  /**
+   * Replace the video with a generated picture: `fn(W, H, mode)` draws it and
+   * returns { tex, w, h }, and that texture is mapped exactly as a video frame
+   * would be. null goes back to the video.
+   */
+  setGenerator(fn) {
+    if (!fn && this.generator) this._uploaded = false;   // the video frame may be stale
+    this.generator = fn || null;
+  }
+
+  // The picture to map this frame: the generated one, or the latest video frame.
+  _picture(blendOpt, smoothMotion) {
+    if (this.generator) {
+      const g = this.generator(this.canvas.width, this.canvas.height, this._mode);
+      if (g && g.tex) {
+        this.sourceSize = [g.w, g.h];
+        return { ok: true, tex: g.tex, prev: g.tex, crop: [0, 0, 1, 1], blend: 1 };
+      }
+    }
+    const ok = this._uploadSource();
+    const blend = blendOpt != null ? blendOpt : this._blendFactor(smoothMotion);
+    return { ok, tex: this.srcTex, prev: this.prevTex, crop: this.crop, blend };
+  }
 
   setOverlay(canvasOrNull) {
     const gl = this.gl;
@@ -493,8 +519,9 @@ export class Engine {
     const g = project.global || {};
     const dim = opts.dimOverride != null ? opts.dimOverride
       : (g.blackout ? 0 : 1) * (g.brightness == null ? 1 : g.brightness);
-    const hasSrc = this._uploadSource();
-    const blend = opts.blend != null ? opts.blend : this._blendFactor(g.smoothMotion);
+    this._mode = mode;
+    const pic = this._picture(opts.blend, g.smoothMotion);
+    const hasSrc = pic.ok, blend = pic.blend;
 
     if (mode === 'fill') {
       // The plain full-screen picture (the TV). It goes through an
@@ -507,7 +534,7 @@ export class Engine {
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (hasSrc) {
-        const cr = this.crop;
+        const cr = pic.crop;
         const sw = this.sourceSize[0] * cr[2], sh = this.sourceSize[1] * cr[3];
         let rect = [0, 0, 1, 1];
         const fit = opts.fit || 'contain';
@@ -520,10 +547,10 @@ export class Engine {
         gl.useProgram(this.progDirect.p);
         this._bindQuad(this.progDirect);
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+        gl.bindTexture(gl.TEXTURE_2D, pic.tex);
         gl.uniform1i(this.progDirect.u.uTex, 0);
         gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
+        gl.bindTexture(gl.TEXTURE_2D, pic.prev);
         gl.uniform1i(this.progDirect.u.uPrev, 1);
         gl.uniform1f(this.progDirect.u.uBlend, blend);
         gl.uniform4f(this.progDirect.u.uRect, rect[0], rect[1], rect[2], rect[3]);
@@ -576,14 +603,14 @@ export class Engine {
       gl.useProgram(this.progSurface.p);
       this._bindQuad(this.progSurface);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
+      gl.bindTexture(gl.TEXTURE_2D, pic.tex);
       gl.uniform1i(this.progSurface.u.uTex, 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.prevTex);
+      gl.bindTexture(gl.TEXTURE_2D, pic.prev);
       gl.uniform1i(this.progSurface.u.uPrev, 1);
       gl.uniform1f(this.progSurface.u.uBlend, blend);
       const U = this.progSurface.u;
-      gl.uniform4f(U.uCrop, this.crop[0], this.crop[1], this.crop[2], this.crop[3]);
+      gl.uniform4f(U.uCrop, pic.crop[0], pic.crop[1], pic.crop[2], pic.crop[3]);
 
       for (const s of project.surfaces || []) {
         if (!s.enabled) continue;

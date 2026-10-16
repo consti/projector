@@ -6,6 +6,10 @@
   <string>Projector uses a camera (e.g. your iPhone via Continuity Camera) to show you the wall so you can align the projection and mark areas to black out.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Not used by Projector.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Projector plays Apple Music through the Music app: it needs to tell Music which song to play, pause and seek, and to read your playlists.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Projector listens to the Music app's sound so the visuals and effects can move with the music it is playing.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>LSApplicationCategoryType</key>

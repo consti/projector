@@ -191,6 +191,10 @@ export function defaultState() {
       preDownload: true,       // pull a copy of every streamed track into the cache as it plays
       fxSets: [],              // named sets of effect types, to keep the catalogue short: [{ name, types }]
       fxSet: '',               // the active set's name, or '' for every effect
+      visuals: false,          // replace the video with generated visuals, for every track
+      visualsFor: [],          // videos (videoKey) that always get visuals instead of their picture
+      visualsCfg: { scene: 'auto', every: 30, speed: 1, react: 1, palette: 'auto', emoji: '',   // '' = the default emoji
+        city: 'auto', daytime: 'auto', haze: 0.35, ride: 0.3 },                                 // the train ride's city, hour, haze and how high the line runs
       ai: {
         enabled: false,        // master switch for everything that talks to OpenAI
         apiKey: '',            // optional; otherwise OPENAI_API_KEY from the environment or .env

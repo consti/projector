@@ -87,6 +87,7 @@ export class LibraryView {
   show() { this.open = true; this.root.hidden = false; this.search.focus(); this._renderGrid(); }
   hide() { this.open = false; this.root.hidden = true; this._closeEditor(); }
   toggle() { this.open ? this.hide() : this.show(); }
+  refresh() { this._renderGrid(); }
 
   // --------------------------------------------------------------- data in
   setItems(items) {
@@ -317,6 +318,7 @@ export class LibraryView {
     badges.append(el('span', { class: 'badge lib', text: 'library' }));
     if (it.trim) badges.append(el('span', { class: 'badge', text: 'trimmed' }));
     if (it.sponsorSkips && it.sponsorSkips.length) badges.append(el('span', { class: 'badge', title: 'SponsorBlock', text: 'SB' }));
+    if (this.hooks.hidesVideo && this.hooks.hidesVideo(it.id)) badges.append(el('span', { class: 'badge vis', title: 'Plays with visuals instead of its video', text: 'visuals' }));
 
     const tagline = el('div', { class: 'libTagline' }, (it.tags || []).map((t) => el('span', { class: 'miniTag', text: t })));
 
@@ -417,6 +419,7 @@ export class LibraryView {
     const artist = el('input', { type: 'text', value: it.artist || '', placeholder: 'Artist' });
     const title = el('input', { type: 'text', value: it.title || '', placeholder: 'Song title' });
     const sponsor = el('input', { type: 'checkbox' }); sponsor.checked = it.sponsor !== false;
+    const hideVid = el('input', { type: 'checkbox' }); hideVid.checked = !!(this.hooks.hidesVideo && this.hooks.hidesVideo(it.id));
 
     // tags
     const tagWrap = el('div', { class: 'edTags' });
@@ -454,6 +457,7 @@ export class LibraryView {
             crop: crop ? { x: +crop.x.toFixed(4), y: +crop.y.toFixed(4), w: +crop.w.toFixed(4), h: +crop.h.toFixed(4) } : null,
             sponsor: sponsor.checked,
           });
+          if (this.hooks.setHidesVideo && hideVid.checked !== !!this.hooks.hidesVideo(it.id)) this.hooks.setHidesVideo(it.id, hideVid.checked);
           this.hooks.toast('Saved');
           this._closeEditor();
         } }),
@@ -484,6 +488,7 @@ export class LibraryView {
       ]),
 
       el('label', { class: 'edField row', style: 'align-items:center' }, [sponsor, el('span', { text: 'Skip sponsor / non-music segments (SponsorBlock)' })]),
+      el('label', { class: 'edField row', style: 'align-items:center' }, [hideVid, el('span', { text: 'Hide the video: play generated visuals instead' })]),
     ]);
 
     root.append(el('div', { class: 'edBack', onclick: (e) => { if (e.target.classList.contains('edBack')) this._closeEditor(); } }, [

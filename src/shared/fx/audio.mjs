@@ -40,10 +40,31 @@ const BANDS = [
   ['air', 6000, 15000],
 ];
 
+/**
+ * Samples arriving from outside the page (the Music app's output, tapped by
+ * the main process). push() queues them; the reactor plays them into its own
+ * analyser, never into the speakers.
+ */
+export class PcmFeed {
+  constructor() { this.rate = 48000; this.chunks = []; this.at = 0; this.queued = 0; }
+  push(samples, rate) {
+    if (rate) this.rate = rate;
+    this.chunks.push(samples);
+    this.at = performance.now();
+    // never let a stalled page build a backlog: keep ~0.5 s at most
+    this.queued += samples.length;
+    while (this.chunks.length > 1 && this.queued > this.rate * 0.5) this.queued -= this.chunks.shift().length;
+  }
+  get live() { return performance.now() - this.at < 1500; }
+}
+
 export class AudioReactor {
   constructor() {
     this.ctx = null;
     this.analyser = null;
+    this.feed = null;                 // a PcmFeed instead of an element
+    this.feedAnalyser = null;
+    this.feedNext = 0;
     this.sources = new WeakMap();     // element -> MediaElementAudioSourceNode
     this.el = null;
     this.bins = null;
@@ -100,13 +121,49 @@ export class AudioReactor {
     }
   }
 
+  /** Listen to a PcmFeed. Its samples go to a second analyser that has no way to the speakers. */
+  attachFeed(feed) {
+    if (!feed) return false;
+    try {
+      if (!this.ctx) this.attach(document.createElement('audio'));   // builds the context and the main analyser
+      if (!this.feedAnalyser) {
+        const a = this.ctx.createAnalyser();
+        a.fftSize = 2048; a.smoothingTimeConstant = 0.55; a.minDecibels = -95; a.maxDecibels = -12;
+        this.feedAnalyser = a;
+      }
+      if (this.feed !== feed) { this.feed = feed; this.feedNext = 0; }
+      this.el = null;
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+      // play what has arrived, back to back, a little behind real time
+      const ctx = this.ctx;
+      for (const samples of feed.chunks) {
+        const buf = ctx.createBuffer(1, samples.length, feed.rate);
+        buf.copyToChannel(samples, 0);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(this.feedAnalyser);
+        const at = Math.max(ctx.currentTime + 0.03, this.feedNext);
+        if (this.feedNext && at - this.feedNext > 0.3) this.feedNext = at;   // a gap: start afresh rather than drift
+        src.start(at);
+        this.feedNext = at + buf.duration;
+      }
+      feed.chunks.length = 0; feed.queued = 0;
+      this.failed = null;
+      return true;
+    } catch (e) {
+      this.failed = e.message;
+      return false;
+    }
+  }
+
   /** Stop reading. The audio graph stays wired — see attach(). */
   detach() {
     this.el = null;
+    this.feed = null;
     this.f = { ...EMPTY };
   }
 
-  get ready() { return !!this.analyser && !!this.el; }
+  get ready() { return !!this.analyser && (!!this.el || !!this.feed); }
 
   /**
    * @param {number} dt seconds
@@ -115,7 +172,7 @@ export class AudioReactor {
   update(dt, o = {}) {
     if (!this.ready) { this.f = { ...EMPTY }; return this.f; }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
-    const a = this.analyser;
+    const a = this.feed ? this.feedAnalyser : this.analyser;
     a.getByteFrequencyData(this.bins);
     const n = this.bins.length;
     const nyquist = this.ctx.sampleRate / 2;

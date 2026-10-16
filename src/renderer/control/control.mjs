@@ -6,6 +6,9 @@ import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLa
 import { PeopleView, funnyName } from '/renderer/control/characters.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
+import { PcmFeed } from '/shared/fx/audio.mjs';
+import { MusicView } from './music.mjs';
+import { VisualsHost, Visuals, visualsOn, videoKey, VISUAL_SCENES, VISUAL_SCENE_HINTS, VISUAL_PALETTE_NAMES, VISUAL_CITIES, VISUAL_DAYTIMES, DEFAULT_VISUAL_EMOJI, defaultVisualsCfg } from '/shared/visuals.mjs';
 import { buildFxSection, buildFxWorldSections, buildFxBrowser, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
@@ -31,6 +34,7 @@ const el = (tag, props = {}, kids = []) => {
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sourceBadge = (it) => {
+  if (it.kind === 'music') return 'Apple Music';
   const from = it.from || (it.kind === 'file' ? 'file' : it.kind === 'library' ? 'library' : 'stream');
   return from === 'library' ? 'lib' : from === 'file' ? 'file' : from === 'stream' ? 'stream' : from;
 };
@@ -112,6 +116,33 @@ function fxPoints() {
 
 // ---------------------------------------------------------------- effects --
 const fxHost = new FxHost(stage.engine, 'control');
+const visualsHost = new VisualsHost(stage.engine);
+
+// what the Music app is playing, tapped by the main process; the analyser
+// listens to this instead of a media element while an Apple Music song is on
+const musicFeed = new PcmFeed();
+api.onMusicPcm((pkt) => { if (pkt && pkt.samples) musicFeed.push(pkt.samples instanceof Float32Array ? pkt.samples : new Float32Array(pkt.samples.buffer || pkt.samples), pkt.rate); });
+const isMusicSource = () => !!(S && S.transport.source && S.transport.source.kind === 'music');
+
+// ---------------------------------------------------------------- visuals --
+// Visuals in place of the picture: for every track (settings.visuals), or for
+// particular videos that are not worth watching (settings.visualsFor).
+const visualsCfg = () => ({ ...defaultVisualsCfg(), ...((S && S.settings.visualsCfg) || {}) });
+const patchVisualsCfg = (p) => api.patchState({ settings: { visualsCfg: { ...visualsCfg(), ...p } } });
+const hidesVideo = (key) => !!key && !!S && (S.settings.visualsFor || []).includes(key);
+function setHidesVideo(key, on) {
+  if (!key) return;
+  const list = (S.settings.visualsFor || []).filter((k) => k !== key);
+  if (on) list.push(key);
+  api.patchState({ settings: { visualsFor: list } });
+}
+function toggleThisVideo() {
+  const key = videoKey(S && S.transport.source);
+  if (!key) { toast('Nothing is playing'); return; }
+  const on = !hidesVideo(key);
+  setHidesVideo(key, on);
+  toast(on ? 'Visuals instead of this video, every time it plays' : 'Showing this video again', 1800);
+}
 let fxLayerSel = null;
 const pointer = { x: 0.5, y: 0.5, px: 0.5, py: 0.5, inside: false, down: false, moved: 0 };
 
@@ -608,7 +639,11 @@ const libraryView = new LibraryView($('#libraryView'), {
   toast,
   play: (ids, opts) => api.libraryPlay(ids, opts),
   toggleDiscover: () => toggleDiscover(),
+  hidesVideo: (id) => hidesVideo(id),
+  setHidesVideo: (id, on) => setHidesVideo(id, on),
 });
+const musicView = new MusicView($('#musicView'), { toast, fmtTime });
+api.onMusicTap((st) => musicView.tapState(st));
 api.library().then((items) => libraryView.setItems(items));
 api.onLibrary((items) => { libraryView.setItems(items); remote.sendLibrary(items); if (S) renderPlaylist(); });
 api.onLibraryProgress(({ id, progress }) => libraryView.setProgress(id, progress));
@@ -689,6 +724,8 @@ $('#scrub').oninput = (e) => {
   if (d) api.cmd('seek', (e.target.value / 1000) * d);
 };
 $('#gBlack input').onchange = () => { project.global.blackout = !project.global.blackout; pushProject(true); syncTopSideButtons(); };
+$('#tVis input').onchange = (e) => api.patchState({ settings: { visuals: e.target.checked } });
+$('#tHide').onclick = () => toggleThisVideo();
 $('#tAi input').onchange = (e) => { ai.patch({ steer: e.target.checked, enabled: e.target.checked ? true : ai.ai.enabled }); if (e.target.checked) ai.lastTrack = null; };
 $('#oProj input').onchange = () => toggleOutput('projector').then(syncTopSideButtons);
 $('#oTv input').onchange = () => toggleOutput('tv').then(syncTopSideButtons);
@@ -719,7 +756,7 @@ function renderPlaylist(force) {
   const items = S.playlist.items;
   const libKey = (typeof libraryView !== 'undefined' && libraryView) ? libraryView.items.map((e) => e.id + (e.cache ? 'c' : 'k') + (e.status || '')[0]).join('') : '';
   const key = items.length + '|' + S.playlist.index + '|' + (S.playlist.name || '') + '|' +
-    items.map((i) => i.id).join(',') + '|' + libKey;
+    items.map((i) => i.id).join(',') + '|' + libKey + '|' + (S.settings.visualsFor || []).join(',');
   if (key === plKey && !force) return;
   plKey = key;
 
@@ -744,6 +781,11 @@ function renderPlaylist(force) {
       }),
       it.duration ? el('span', { class: 'd', text: fmtTime(it.duration) }) : null,
       el('span', { class: 'k ' + (kept ? 'library' : cached ? 'cached' : (it.from || it.kind)), text: badge }),
+      it.kind === 'music' ? null : el('span', {
+        class: 'vis' + (hidesVideo(videoKey(it)) ? ' on' : ''), text: '\u25D0',
+        title: hidesVideo(videoKey(it)) ? 'Plays with visuals instead of its video. Click to show the video again' : 'Play visuals instead of this video',
+        onclick: (e) => { e.stopPropagation(); setHidesVideo(videoKey(it), !hidesVideo(videoKey(it))); },
+      }),
       it.kind === 'youtube' && !kept ? el('span', {
         class: 'keep', text: '\u2605', title: cached ? 'Keep this in the library' : 'Download this into the library',
         onclick: (e) => { e.stopPropagation(); api.playlistKeep(i).then(() => toast(cached ? 'Kept in the library' : 'Downloading into the library')); },
@@ -811,7 +853,7 @@ function deleteSelected() {
 const updaters = [];
 // things that need to move every frame rather than on commit (audio meters)
 const frameUpdaters = [];
-const openSections = new Set(['Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets', 'AI']);
+const openSections = new Set(['Visuals', 'Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets', 'AI']);
 
 function section(title, kids) {
   const body = el('div', { class: 'body' }, kids);
@@ -900,7 +942,7 @@ const sourceReady = (el) => !!el && !!(el.videoWidth || el.width);
 function buildInspector() {
   updaters.length = 0;
   frameUpdaters.length = 0;
-  const hosts = { fx: $('#fxHost'), look: $('#lookHost'), mapInspector: $('#stageInspector'), out: $('#outHost') };
+  const hosts = { fx: $('#fxHost'), look: $('#lookHost'), vis: $('#visHost'), mapInspector: $('#stageInspector'), out: $('#outHost') };
   const scroll = {};
   for (const k in hosts) if (hosts[k]) scroll[k] = hosts[k].scrollTop;
 
@@ -915,6 +957,8 @@ function buildInspector() {
   if (browser && !browser.firstChild) browser.appendChild(buildFxBrowser(fxUi()));
   else if (browser) buildFxBrowser(fxUi());      // refresh the badges
 
+  hosts.vis.innerHTML = '';
+  hosts.vis.appendChild(visualsSection());
   hosts.look.innerHTML = '';
   for (const sec of buildFxWorldSections(fxUi())) hosts.look.appendChild(sec);
   hosts.look.appendChild(lookSection());
@@ -941,6 +985,7 @@ function showView(name) {
   if (slot) { stageEl.classList.toggle('docked', name !== 'stage'); slot.appendChild(stageEl); }
   else { stageEl.classList.add('docked'); $('#stagePark').appendChild(stageEl); }
   if (name === 'library') libraryView.show(); else libraryView.hide();
+  if (name === 'music') musicView.show(); else musicView.hide();
   if (name === 'people') peopleView.show(); else peopleView.hide();
   // the stage changed size — relayout on the next frame
   requestAnimationFrame(() => { stage.layout(); stage.draw && stage.draw(); });
@@ -1322,6 +1367,58 @@ function layersSection() {
   return section('Layers', rows);
 }
 
+// the emoji the two emoji scenes draw from; applied when the field is left
+function emojiRow() {
+  const inp = el('input', { type: 'text', placeholder: DEFAULT_VISUAL_EMOJI });
+  const show = () => { if (document.activeElement !== inp) inp.value = visualsCfg().emoji || ''; };
+  inp.onchange = () => patchVisualsCfg({ emoji: inp.value.trim() || DEFAULT_VISUAL_EMOJI });
+  inp.onkeydown = (e) => e.stopPropagation();
+  updaters.push(show); show();
+  return el('div', { class: 'ctl wide' }, [el('label', { text: 'Emoji' }), inp]);
+}
+
+function visualsSection() {
+  const cfg = visualsCfg;
+  const now = el('div', { class: 'hint' });
+  const showNow = () => {
+    const on = visualsOn(S);
+    const sc = visualsHost.scene;
+    const name = sc ? (VISUAL_SCENES.find((x) => x[0] === sc) || [sc, sc])[1] : '';
+    const txt = !on ? 'The video is showing.' : visualsHost.error ? visualsHost.error
+      : 'Showing: ' + (name || '…') + (S.settings.visuals ? '' : '  (this video only)');
+    if (now.textContent !== txt) now.textContent = txt;
+  };
+  frameUpdaters.push(showNow); showNow();
+  const thisVideo = toggle('Always for this video', () => hidesVideo(videoKey(S.transport.source)),
+    (v) => setHidesVideo(videoKey(S.transport.source), v), { push: false, title: 'Remember this video: it plays with visuals from now on (H)' });
+  // settings that belong to one scene show only while that scene is chosen
+  const forScene = (test, rows) => {
+    const box = el('div', { class: 'visFor' }, rows);
+    const show = () => { box.hidden = !test(cfg().scene); };
+    updaters.push(show); show();
+    return box;
+  };
+  return section('Visuals', [
+    el('div', { class: 'row' }, [
+      toggle('Visuals instead of the video', () => !!S.settings.visuals, (v) => api.patchState({ settings: { visuals: v } }), { push: false }),
+    ]),
+    el('div', { class: 'row' }, [thisVideo]),
+    now,
+    slider('Change', () => cfg().every, (v) => patchVisualsCfg({ every: v }), { min: 10, max: 120, step: 5, fmt: (v) => 'every ' + v + ' s', push: false }),
+    selectRow('Colours', VISUAL_PALETTE_NAMES, () => cfg().palette, (v) => patchVisualsCfg({ palette: v })),
+    forScene((sc) => sc === 'emoji' || sc === 'emojiwall', [emojiRow()]),
+    forScene((sc) => sc === 'train', [
+      selectRow('City', VISUAL_CITIES, () => cfg().city, (v) => patchVisualsCfg({ city: v })),
+      selectRow('Time of day', VISUAL_DAYTIMES, () => cfg().daytime, (v) => patchVisualsCfg({ daytime: v })),
+      slider('Haze', () => cfg().haze, (v) => patchVisualsCfg({ haze: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
+      slider('Line height', () => cfg().ride, (v) => patchVisualsCfg({ ride: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
+    ]),
+    slider('Speed', () => cfg().speed, (v) => patchVisualsCfg({ speed: v }), { min: 0.2, max: 3, step: 0.05, fmt: (v) => Number(v).toFixed(2) + 'x', push: false }),
+    slider('Music', () => cfg().react, (v) => patchVisualsCfg({ react: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false }),
+    el('div', { class: 'hint', text: 'For music videos that are not worth watching: the picture is replaced by generated scenes — tunnels, fractals, lasers, emoji — that move with the sound, while the video keeps playing underneath for its audio. Everything else still applies — the mapping, the masks, the TV, and any effects you stack on top. Press H to hide the video that is playing; ◐ in the playlist does the same for any track.' }),
+  ]);
+}
+
 function lookSection() {
   const motion = el('div', { class: 'hint' });
   const showMotion = () => {
@@ -1492,6 +1589,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === ' ') { api.cmd('toggle'); e.preventDefault(); return; }
   if (k === 'b') { project.global.blackout = !project.global.blackout; pushProject(true); e.preventDefault(); return; }
+  if (k === 'h') { toggleThisVideo(); e.preventDefault(); return; }
   if (k === 'g') { project.global.showGuides = !project.global.showGuides; pushProject(true); e.preventDefault(); return; }
   if (k === 'f' && !e.metaKey) {
     ensureFx(project);
@@ -1557,7 +1655,9 @@ function applyState(s) {
   const setKey = JSON.stringify([s.settings && s.settings.fxSet, s.settings && s.settings.fxSets]);
   if (setKey !== applyState.setKey) { applyState.setKey = setKey; if (!first) { buildInspector(); api.remoteSend(null, remote.catalogMsg()); } }
   remote.applyState(s);
-  player.setSource(s.transport.source, { preview: usePreviewStream() });
+  const visKey = (s.settings.visualsFor || []).join(',');
+  if (visKey !== applyState.visKey) { applyState.visKey = visKey; if (!first) libraryView.refresh(); }
+  player.setSource(s.transport.source && s.transport.source.kind !== 'music' ? s.transport.source : null, { preview: usePreviewStream() });
   renderPlaylist();
   updateTop();
   syncPhoneSwitches();
@@ -1569,6 +1669,10 @@ function applyState(s) {
 function syncTopSideButtons() {
   const aiOn = !!(S.settings.ai && S.settings.ai.steer && S.settings.ai.enabled);
   $('#tAi input').checked = aiOn;
+  $('#tVis input').checked = !!S.settings.visuals;
+  const hid = hidesVideo(videoKey(S.transport.source));
+  $('#tHide').classList.toggle('on', hid);
+  $('#tHide').title = hid ? 'This video is replaced by visuals. Click to show it again (H)' : 'Replace this video with visuals, every time it plays (H)';
   $('#tAi').classList.toggle('busy', !!ai.busy);
   $('#oProj input').checked = !!S.outputs.projector.enabled;
   $('#oTv input').checked = !!S.outputs.tv.enabled;
@@ -1622,12 +1726,81 @@ window.__dev = {
   toast,
 };
 
+// ------------------------------------------------------------ visuals view --
+// The catalogue of scenes: a card per scene with its captured frame. Hovering
+// a card renders that scene live, small, to the current music, so you can
+// audition one without taking it to the wall. Built once; frame() keeps the
+// badges and the hovered card current.
+const visualsBrowser = (() => {
+  const root = $('#visBrowser');
+  const cards = new Map();
+  let hover = null;              // scene id under the pointer
+  let gl = null, live = null, glc = null;
+  const W = 384, H = 216;
+  const ensureLive = () => {
+    if (gl) return !!live;
+    glc = document.createElement('canvas'); glc.width = W; glc.height = H;
+    gl = glc.getContext('webgl2', { antialias: false });
+    if (!gl) return false;
+    try { live = new Visuals(gl); } catch (e) { console.error('[visuals preview]', e); live = null; }
+    return !!live;
+  };
+  const card = (id, label, hint) => {
+    const cv = el('canvas', { class: 'visLive', width: W, height: H });
+    const img = id === 'auto' ? el('div', { class: 'fxNoThumb', text: '\u2728' })
+      : el('img', { src: '/renderer/control/visual-thumbs/' + id + '.jpg', alt: label, loading: 'lazy' });
+    const c = el('button', { class: 'fxCard visScene', title: label }, [
+      el('div', { class: 'fxThumb' }, [img, cv, el('span', { class: 'fxBadge now', text: 'showing' }), el('span', { class: 'fxBadge sel', text: 'chosen' })]),
+      el('div', { class: 'fxCardBody' }, [el('div', { class: 'fxCardName', text: label }), hint ? el('div', { class: 'fxCardHint', text: hint }) : null]),
+    ]);
+    c.onclick = () => { patchVisualsCfg({ scene: id }); toast(id === 'auto' ? 'Mixing every scene' : 'Holding ' + label); };
+    c.onmouseenter = () => { if (id !== 'auto') hover = id; };
+    c.onmouseleave = () => { if (hover === id) { hover = null; cv.classList.remove('on'); } };
+    cards.set(id, { el: c, cv });
+    return c;
+  };
+  root.innerHTML = '';
+  root.appendChild(el('div', { class: 'fxGroupHead' }, [
+    el('h2', { text: 'Visuals' }),
+    el('div', { class: 'hint', text: 'Generated scenes that take the place of the picture and move with the sound. Click one to hold it; Mix walks through them all, changing every few seconds. Hover a card to see it live to the music that is playing.' }),
+    el('span', { class: 'count', text: VISUAL_SCENES.length + ' scenes' }),
+  ]));
+  const grid = el('div', { class: 'fxGrid' });
+  grid.appendChild(card('auto', 'Mix', 'Every scene in turn, in a shuffled order, with a cross-fade between them.'));
+  for (const [id, label] of VISUAL_SCENES) grid.appendChild(card(id, label, VISUAL_SCENE_HINTS[id]));
+  root.appendChild(grid);
+
+  const frame = () => {
+    if (!S || currentView !== 'visuals') return;
+    const sel = visualsCfg().scene, sc = visualsOn(S) ? visualsHost.scene : null;
+    for (const [id, c] of cards) {
+      c.el.classList.toggle('on', id === sel);
+      c.el.classList.toggle('now', !!sc && id === sc);
+    }
+    if (!hover || !ensureLive()) return;
+    const c = cards.get(hover);
+    const r = live.render({ w: W, h: H, time: targetTime(S.transport), audio: fxHost.features(), cfg: { ...visualsCfg(), scene: hover },
+      key: S.transport.source && S.transport.source.key, playing: !!S.transport.playing });
+    if (live.error) return;
+    // the scene is in a texture, row 0 at the top; the canvas wants it the other way up
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, live.target.fbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, r.w, r.h, 0, H, W, 0, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    c.cv.getContext('2d').drawImage(glc, 0, 0);
+    c.cv.classList.add('on');
+  };
+  return { frame };
+})();
+
 // -------------------------------------------------------------------- loop --
 let lastTitleTime = -1;
 function frame() {
   if (S) {
     const g = project.global;
-    if (g.testPattern && g.testPattern !== 'off') {
+    const pattern = !!(g.testPattern && g.testPattern !== 'off');
+    const vis = !pattern && visualsOn(S);
+    if (pattern) {
       if (patternKind !== g.testPattern) {
         patternKind = g.testPattern;
         patternCanvas = makePattern(patternKind, 1920, 1080);
@@ -1653,11 +1826,20 @@ function frame() {
       playing: !!S.transport.playing,
       audioEl: player.separateAudio ? player.audio : player.video,
       ownsAudio: S.audioOut === 'control',
+      feed: isMusicSource() ? musicFeed : null,
       wall: tvPreview ? 'tv' : 'projector',
       off: tvFill && S.outputs.tv.fx === false,
       aspect: tvFill ? stage.glc.height / Math.max(1, stage.glc.width) : undefined,
       shapes: !tvFill,
       characters: activeCharacters(S),
+      listen: vis,
+    });
+    visualsHost.frame(vis, {
+      time: targetTime(S.transport),
+      audio: fxHost.features(),
+      cfg: S.settings.visualsCfg,
+      key: S.transport.source && S.transport.source.key,
+      playing: !!S.transport.playing,
     });
     if (fxHost.outgoingAudio && performance.now() - lastAudioSend > 33) {
       lastAudioSend = performance.now();
@@ -1673,6 +1855,7 @@ function frame() {
     remote.frame();
     ai.frame();
     depth.frame();
+    visualsBrowser.frame();
 
     const t = S.transport;
     const now = targetTime(t);

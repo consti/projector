@@ -11,6 +11,7 @@ const { RemoteServer } = require('./remote');
 const { Library } = require('./library');
 const { Ai } = require('./ai');
 const { Characters } = require('./characters');
+const { Music } = require('./music');
 
 const ROOT = path.join(__dirname, '..');           // .../src
 const isDev = process.argv.includes('--dev');
@@ -352,9 +353,21 @@ async function loadIndex(i, autoplay = true, attempt = 0) {
   state.playlist = { ...pl, index: idx };
   setTransport({ loading: true, error: null });
 
+  // leaving an Apple Music song for anything else: give the Music app back
+  if (music && state.transport.source && state.transport.source.kind === 'music' && item.kind !== 'music') music.leave();
+
   let source;
   try {
-    if (item.kind === 'library') {
+    if (item.kind === 'music') {
+      // Apple Music: the Music app plays it; the clock follows it (see followMusic)
+      if (!music) throw new Error('Apple Music is not available');
+      const r = await music.play({ ...item, volume: state.transport.volume, muted: state.transport.muted });
+      if (r && r.duration) item.duration = r.duration;
+      if (!autoplay) music.pause();
+      source = { kind: 'music', from: 'music', url: null, title: item.title, artist: item.uploader || item.artist || '',
+        album: item.album || '', musicId: item.musicId, dbId: (r && r.db) || item.dbId, duration: item.duration || 0 };
+      musicFollow = { lastPos: 0, since: Date.now(), misses: 0 };
+    } else if (item.kind === 'library') {
       source = library.playSource(item.libId);
       if (!source) throw new Error('not downloaded yet');
       item.duration = item.duration || source.duration;
@@ -388,6 +401,9 @@ async function loadIndex(i, autoplay = true, attempt = 0) {
     setTransport({ loading: false, error: String(e.message || e) });
     return;
   }
+  // which video this is, whatever it plays from, so per-video settings
+  // (visuals instead of the picture) follow it from stream to cache to library
+  source.key = item.libId || (item.id ? String(item.id).replace(/^lib:/, '') : null) || item.path || item.url || null;
   setTransport({
     source, loading: false, error: null,
     position: (source.trim && source.trim.start) || 0, anchorTime: Date.now(), playing: autoplay,
@@ -446,6 +462,87 @@ function onEnded() {
     seek(0); return pause();
   }
   loadIndex(next, true);
+}
+
+// ------------------------------------------------------------ apple music ----
+// The Music app is the player for 'music' items, so the shared clock follows
+// it rather than the other way round: about once a second its position is
+// read and the clock is pulled to it if they drifted apart. A pause or play
+// made in Music itself is picked up the same way, and a different song put on
+// in Music is adopted as the source. The end of the song is heard twice over:
+// by the clock watchdog above, and by Music's position wrapping (its repeat is
+// held at "one" so it never runs on to a song of its own choosing).
+let music = null;
+let musicFollow = null;
+
+function setupMusic() {
+  music = new Music({
+    log: (...a) => console.log('[music]', ...a),
+    onPcm: (samples, rate) => { if (control && !control.isDestroyed()) control.webContents.send('music:pcm', { rate, samples }); },
+    onTapState: (st) => { if (control && !control.isDestroyed()) control.webContents.send('music:tap', st); },
+  });
+  setInterval(followMusic, 900);
+  setInterval(() => { if (music) music.checkTap(); }, 5000);
+}
+
+async function followMusic() {
+  const t = state.transport;
+  const src = t.source;
+  if (!music || !src || src.kind !== 'music' || music.busy || t.loading) return;
+  let st;
+  try { st = await music.now(); } catch (e) { console.log('[music] follow:', e.message); return; }
+  if (!st || music.busy || state.transport.source !== src) return;
+  const f = musicFollow || (musicFollow = { lastPos: 0, since: Date.now(), misses: 0 });
+  if (!st.running) {
+    if (t.playing) setTransport({ playing: false, position: nowTime(), anchorTime: Date.now(), error: 'The Music app was quit' });
+    return;
+  }
+  // a different song was put on in Music itself: follow it
+  if (st.track && st.track.id && st.track.id !== src.musicId && st.state !== 'stopped') {
+    if (++f.misses < 2) return;
+    f.misses = 0;
+    const key = 'am:' + st.track.id;
+    setTransport({
+      source: { ...src, title: st.track.title, artist: st.track.artist, album: st.track.album, musicId: st.track.id, dbId: st.track.db, duration: st.track.duration, key },
+      duration: st.track.duration || 0, position: st.pos || 0, anchorTime: Date.now(), playing: st.state === 'playing',
+    });
+    return;
+  }
+  f.misses = 0;
+  const pos = +st.pos || 0;
+  if (st.state === 'playing') {
+    // the song came round again: Music is on repeat-one, so that is the end
+    if (t.playing && f.lastPos > Math.max(3, (t.duration || 0) - 6) && pos < 2.5) { f.lastPos = pos; endedOnce(); return; }
+    f.lastPos = pos;
+    if (!t.playing) setTransport({ playing: true, position: pos, anchorTime: Date.now(), error: null });
+    else if (Math.abs(pos - nowTime()) > 0.4) setTransport({ position: pos, anchorTime: Date.now() });
+  } else if (st.state === 'paused') {
+    f.lastPos = pos;
+    if (t.playing) setTransport({ playing: false, position: pos, anchorTime: Date.now() });
+    else if (Math.abs(pos - t.position) > 0.4) setTransport({ position: pos, anchorTime: Date.now() });
+  } else if (st.state === 'stopped') {
+    // stopped from Music's side, or the song ran out between two polls
+    if (t.playing) {
+      if (Date.now() - f.since > 4000 && (f.lastPos > 1 || nowTime() > 2)) endedOnce();
+      else setTransport({ playing: false, position: nowTime(), anchorTime: Date.now() });
+    }
+    f.lastPos = 0;
+  }
+}
+
+/** Transport commands a Music song answers to, before the clock is moved. */
+function musicCmd(cmd, arg) {
+  if (!music || !state.transport.source || state.transport.source.kind !== 'music') return;
+  switch (cmd) {
+    case 'play': music.resume(); break;
+    case 'pause': music.pause(); break;
+    case 'toggle': state.transport.playing ? music.pause() : music.resume(); break;
+    case 'seek': music.seek(arg); break;
+    case 'seekBy': music.seek(nowTime() + arg); break;
+    case 'volume': music.volume(arg, state.transport.muted); break;
+    case 'muted': music.volume(state.transport.volume, !!arg); break;
+  }
+  if (musicFollow) musicFollow.lastPos = cmd === 'seek' ? +arg || 0 : cmd === 'seekBy' ? nowTime() + arg : musicFollow.lastPos;
 }
 
 // --------------------------------------------------------------- windows ----
@@ -1053,6 +1150,7 @@ function pushLibrary() {
   if (control && !control.isDestroyed()) control.webContents.send('library', library.serializeAll());
 }
 function setupLibrary() {
+  setupMusic();
   library = new Library(app.getPath('userData'));
   library.setMaxHeight(state.settings.maxHeight || 1080);
   let t = null;
@@ -1186,6 +1284,7 @@ function ipc() {
   });
 
   ipcMain.handle('transport:cmd', async (e, cmd, arg) => {
+    musicCmd(cmd, arg);
     switch (cmd) {
       case 'play': play(); break;
       case 'pause': pause(); break;
@@ -1252,6 +1351,27 @@ function ipc() {
     if (!state.transport.source) await loadIndex(startAt, true);
     else if (r.items.length > 1) prefetch(startAt);
     return { count: r.items.length, playlist: r.playlist, truncated: r.truncated };
+  });
+
+  // ---------------------------------------------------------- apple music ----
+  ipcMain.handle('music:status', () => music.status());
+  ipcMain.handle('music:playlists', () => music.playlists());
+  ipcMain.handle('music:tracks', (e, playlistId) => music.tracks(playlistId || null));
+  ipcMain.handle('music:forget', () => { music.forget(); return true; });
+  // songs from Music into the transport playlist; { playNow } starts the first of them
+  ipcMain.handle('music:add', async (e, tracks, opts) => {
+    const o = opts || {};
+    const items = (tracks || []).map((t) => ({
+      kind: 'music', id: 'am:' + t.id, musicId: String(t.id), dbId: t.db, title: t.title || 'Untitled',
+      uploader: t.artist || '', album: t.album || '', duration: t.duration || 0,
+    }));
+    if (!items.length) return { count: 0 };
+    const startAt = state.playlist.items.length;
+    state.playlist.items = state.playlist.items.concat(items);
+    if (o.name && !state.playlist.name && startAt === 0) state.playlist.name = o.name;
+    pushState();
+    if (o.playNow || !state.transport.source) await loadIndex(startAt, true);
+    return { count: items.length };
   });
 
   // -------------------------------------------------------------- library ----
@@ -1642,6 +1762,7 @@ function onDisplays() {
 
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', () => {
+  if (music) { music.leave(); music.dispose(); }
   if (remote) remote.stop();
   if (psbId != null) powerSaveBlocker.stop(psbId);
   globalShortcut.unregisterAll();

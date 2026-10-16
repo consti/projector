@@ -35,7 +35,8 @@ export class FxHost {
    * Returns a packet to broadcast, or null.
    */
   _audio(fx, opts) {
-    if (!fx.audio || !fx.audio.enabled) {
+    // opts.listen: something other than the effects wants the music (visuals)
+    if ((!fx.audio || !fx.audio.enabled) && !opts.listen) {
       if (this.reactor) { this.reactor.detach(); }
       this.audio = AUDIO_EMPTY;
       return null;
@@ -44,7 +45,15 @@ export class FxHost {
     const dt = Math.min(0.2, (now - this._lastAudioT) / 1000) || 1 / 60;
     this._lastAudioT = now;
 
-    if (opts.audioEl && opts.ownsAudio) {
+    if (opts.feed) {
+      // samples tapped from another app (Apple Music); only the control window has them
+      if (!this.reactor) this.reactor = new AudioReactor();
+      if (this.reactor.attachFeed(opts.feed)) {
+        this.audio = this.reactor.update(dt, fx.audio);
+        return this.reactor.packet();
+      }
+      this.error = this.reactor.failed ? 'audio: ' + this.reactor.failed : this.error;
+    } else if (opts.audioEl && opts.ownsAudio) {
       if (!this.reactor) this.reactor = new AudioReactor();
       if (this.reactor.attach(opts.audioEl)) {
         this.audio = this.reactor.update(dt, fx.audio);
@@ -101,7 +110,9 @@ export class FxHost {
       this.system.sync(project, fx, { wall, aspect: opts.aspect, shapes: opts.shapes });
       this.system.characters = opts.characters || [];
       this.system.setInteractors(this.interactors);
-      this.system.setAudio(this.audio);
+      // the analysis may be running only for the visuals; the layers hear it
+      // only when "React to sound" is on
+      this.system.setAudio(fx.audio && fx.audio.enabled ? this.audio : AUDIO_EMPTY);
       const paused = fx.pauseWithVideo && opts.playing === false;
       if (!paused) this.system.update(Date.now() / 1000);
       this.engine.setFx(this.system);

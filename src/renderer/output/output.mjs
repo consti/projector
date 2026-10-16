@@ -4,6 +4,7 @@ import { makePattern } from '/shared/patterns.mjs';
 import { drawGuides } from '/shared/guides.mjs';
 import { defaultProject, activeCharacters } from '/shared/schema.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
+import { VisualsHost, visualsOn } from '/shared/visuals.mjs';
 
 const role = new URLSearchParams(location.search).get('role') || 'projector';
 const canvas = document.getElementById('c');
@@ -13,6 +14,7 @@ const msgEl = document.getElementById('msg');
 const engine = new Engine(canvas);
 const player = new Player();
 const fx = new FxHost(engine, role);
+const visuals = new VisualsHost(engine);
 
 let state = { project: defaultProject(), transport: {}, settings: {}, outputs: {} };
 let patternCanvas = null, patternKind = 'off';
@@ -24,6 +26,7 @@ player.onFrame = () => engine.markSourceDirty();
 window.__engine = engine;
 window.__player = player;
 window.__fx = fx;
+window.__visuals = visuals;
 
 // the control window relays pointer / camera interaction and one-shot actions
 api.onFxInteract((pts) => fx.setInteractors(pts));
@@ -75,7 +78,8 @@ setTimeout(() => hint.classList.add('gone'), 4000);
 
 function apply(s) {
   state = s;
-  player.setSource(s.transport.source);
+  const src = s.transport.source;
+  player.setSource(src && src.kind !== 'music' ? src : null);   // an Apple Music song plays in the Music app
 }
 
 let lastAudioSend = 0;
@@ -86,8 +90,10 @@ function frame() {
   const g = p.global || {};
   const cfg = (state.outputs && state.outputs[role]) || { mode: role === 'tv' ? 'fill' : 'mapped' };
 
-  // source: calibration pattern overrides the video
-  if (g.testPattern && g.testPattern !== 'off') {
+  // source: calibration pattern overrides the video (and the visuals)
+  const pattern = !!(g.testPattern && g.testPattern !== 'off');
+  const vis = !pattern && visualsOn(state);
+  if (pattern) {
     if (patternKind !== g.testPattern) {
       patternKind = g.testPattern;
       patternCanvas = makePattern(patternKind, 1920, 1080);
@@ -131,6 +137,14 @@ function frame() {
     aspect: fill ? canvas.height / Math.max(1, canvas.width) : undefined,
     shapes: !fill,
     characters: activeCharacters(state),
+    listen: vis,
+  });
+  visuals.frame(vis, {
+    time: targetTime(state.transport || {}),
+    audio: fx.features(),
+    cfg: state.settings && state.settings.visualsCfg,
+    key: state.transport && state.transport.source && state.transport.source.key,
+    playing: !!(state.transport && state.transport.playing),
   });
   if (fx.outgoingAudio && (performance.now() - lastAudioSend) > 33) {
     lastAudioSend = performance.now();
