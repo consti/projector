@@ -1052,7 +1052,12 @@ src/shared/mesh.mjs     warp grid, polygon offsetting
 src/shared/player.mjs   clock-driven playback, drift correction
 src/shared/patterns.mjs calibration patterns
 src/shared/visuals.mjs  generated visuals that replace the video (scenes, scheduling)
-src/renderer/control/   the editor UI
+src/renderer/control/   the editor UI: control.mjs is the shell (state, transport, views, the frame loop)
+src/renderer/control/ui.mjs            the widgets every panel is built from: sections with a "?" that explains them, sliders, switches, selects
+src/renderer/control/mapinspector.mjs  the Map view's inspector: maps, surfaces and shapes, the selection, presets
+src/renderer/control/setup.mjs         the Setup cards: outputs, sound, preview, streams, snapshots, keys; the picture and depth sections
+src/renderer/control/visualspanel.mjs  the visuals choice (top bar, playlist, keys) and the Visuals view's panel and catalogue
+src/renderer/control/fxpanel.mjs       the Effects view: the stack, the world and sound sections, the catalogue with live hover previews
 src/renderer/output/    the fullscreen output windows
 src/renderer/control/motion.mjs   camera movement -> interaction blobs
 src/renderer/control/remote.mjs   phone camera panel, alignment, pose -> interactors

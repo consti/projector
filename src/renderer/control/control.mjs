@@ -3,15 +3,14 @@ import { defaultPicture } from '/shared/default-picture.mjs';
 import { CameraPanel } from '/renderer/control/camera.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
-import { defaultProject, defaultSurface, defaultMask, defaultMap, defaultContent, ensureFx, ensureProject, ensureMaps, wallProject, mapIdFor, CONTENT_KINDS, uid, defaultFxLayer, activeCharacters } from '/shared/schema.mjs';
+import { defaultProject, ensureFx, ensureProject, wallProject, uid, defaultFxLayer, activeCharacters } from '/shared/schema.mjs';
 import { SurfaceVisuals } from '/shared/surface-visuals.mjs';
-import { visualsCfgFor, hasVisualsOverride } from '/shared/visuals-cfg.mjs';
 import { PeopleView, funnyName } from '/renderer/control/characters.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
 import { PcmFeed } from '/shared/fx/audio.mjs';
 import { MusicView } from './music.mjs';
-import { VisualsHost, Visuals, visualsOn, videoKey, VISUAL_SCENES, VISUAL_SCENE_HINTS, VISUAL_PALETTE_NAMES, VISUAL_CITIES, VISUAL_DAYTIMES, DEFAULT_VISUAL_EMOJI, defaultVisualsCfg } from '/shared/visuals.mjs';
+import { VisualsHost, Visuals, visualsOn, videoKey } from '/shared/visuals.mjs';
 import { buildFxSection, buildFxWorldSections, buildFxBrowser, SCENES, applyScene } from '/renderer/control/fxpanel.mjs';
 import { MotionTracker } from '/renderer/control/motion.mjs';
 import { RemotePanel } from '/renderer/control/remote.mjs';
@@ -20,7 +19,10 @@ import { AiDirector } from '/renderer/control/ai.mjs';
 import { DepthSource } from '/renderer/control/depth.mjs';
 import { FxAudition } from '/renderer/control/audition.mjs';
 import { REGISTRY as FX_REGISTRY, QUALITY, withDefaults, PALETTE_MODES } from '/shared/fx/system.mjs';
-import { $, el, clamp, pc, fmtTime, help, note, head, widgets } from '/renderer/control/ui.mjs';
+import { $, el, fmtTime, help, note, head, widgets } from '/renderer/control/ui.mjs';
+import { createMapInspector } from '/renderer/control/mapinspector.mjs';
+import { createSetupPanel } from '/renderer/control/setup.mjs';
+import { createVisualsMode, createVisualsPanel } from '/renderer/control/visualspanel.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
 
@@ -40,7 +42,6 @@ let project = defaultProject();     // locally-owned, authoritative while editin
 let displays = [];
 let audioDevices = [];   // Mac audio output devices (incl. AirPlay), for the sink selector
 let mappings = { items: [], current: null };
-let mappingName = '';
 let epoch = -1;
 let scrubbing = false;
 let patternCanvas = null, patternKind = 'off';
@@ -138,78 +139,10 @@ const isMusicSource = () => !!(S && S.transport.source && S.transport.source.kin
 // ---------------------------------------------------------------- visuals --
 // Visuals in place of the picture: for every track (settings.visuals), or for
 // particular videos that are not worth watching (settings.visualsFor).
-const visualsCfg = () => visualsCfgFor(S);
-// A change goes to the track's own settings while it has some, otherwise to
-// the settings every track shares.
-function patchVisualsCfg(p) {
-  const key = videoKey(S.transport.source);
-  if (key && hasVisualsOverride(S)) {
-    const by = { ...(S.settings.visualsByKey || {}) };
-    by[key] = { ...by[key], ...p };
-    api.patchState({ settings: { visualsByKey: by } });
-  } else {
-    api.patchState({ settings: { visualsCfg: { ...defaultVisualsCfg(), ...(S.settings.visualsCfg || {}), ...p } } });
-  }
-}
-function setVisualsOverride(on) {
-  const key = videoKey(S.transport.source);
-  if (!key) { toast('Nothing is playing to remember'); return; }
-  const by = { ...(S.settings.visualsByKey || {}) };
-  if (on) by[key] = { ...visualsCfg() };      // start from what shows now
-  else delete by[key];
-  api.patchState({ settings: { visualsByKey: by } });
-  toast(on ? 'This track keeps its own visuals settings' : 'This track uses the shared settings again', 1600);
-}
-const hidesVideo = (key) => !!key && !!S && (S.settings.visualsFor || []).includes(key);
-function setHidesVideo(key, on) {
-  if (!key) return;
-  const list = (S.settings.visualsFor || []).filter((k) => k !== key);
-  if (on) list.push(key);
-  api.patchState({ settings: { visualsFor: list } });
-}
-// What the wall shows, as one choice made in one place: the video, visuals for
-// this track only (remembered for it), or visuals for every track. An Apple
-// Music song has no picture, so it always gets visuals.
-const VIS_MODES = [
-  ['video', 'Video', 'The video shows on the wall'],
-  ['track', 'Visuals \u00b7 track', 'Visuals instead of this video, every time it plays (H)'],
-  ['always', 'Visuals \u00b7 all', 'Visuals instead of every video'],
-];
-function visualsMode() {
-  if (!S) return 'video';
-  if (isMusicSource()) return 'music';
-  if (S.settings.visuals) return 'always';
-  return hidesVideo(videoKey(S.transport.source)) ? 'track' : 'video';
-}
-function setVisualsMode(m) {
-  if (!S || visualsMode() === 'music') return;
-  const key = videoKey(S.transport.source);
-  const list = (S.settings.visualsFor || []).filter((k) => k !== key);
-  if (m === 'track') {
-    if (!key) { toast('Nothing is playing to remember'); return; }
-    list.push(key);
-  }
-  api.patchState({ settings: { visuals: m === 'always', visualsFor: list } });
-  toast(m === 'always' ? 'Visuals instead of every video' : m === 'track' ? 'Visuals instead of this video, every time it plays' : 'Showing the video', 1600);
-}
-function visModeSeg() {
-  const seg = el('div', { class: 'seg visSeg' }, VIS_MODES.map(([m, label, title]) =>
-    el('button', { class: 'btn sm', 'data-mode': m, text: label, title, onclick: () => setVisualsMode(m) })));
-  syncVisSeg(seg);
-  return seg;
-}
-function syncVisSeg(seg) {
-  const mode = visualsMode();
-  const music = mode === 'music';
-  seg.classList.toggle('forced', music);
-  seg.title = music ? 'An Apple Music song is playing: it has no picture, so visuals stand in for it' : 'What the wall shows (Visuals view)';
-  for (const b of seg.querySelectorAll('button')) {
-    const m = b.dataset.mode;
-    b.classList.toggle('on', m === mode || (music && m === 'always'));
-    b.disabled = music;
-  }
-}
-const syncVisSegs = () => { for (const seg of document.querySelectorAll('.visSeg')) syncVisSeg(seg); };
+const visuals = createVisualsMode({ state: () => S, toast, isMusicSource });
+const { visualsCfg, patchVisualsCfg, setVisualsOverride, hidesVideo, setHidesVideo, visualsMode, setVisualsMode, visModeSeg, syncVisSegs } = visuals;
+
+// ---------------------------------------------------------------- visuals --
 let fxLayerSel = null;
 const pointer = { x: 0.5, y: 0.5, px: 0.5, py: 0.5, inside: false, down: false, moved: 0 };
 
@@ -674,24 +607,6 @@ const depth = new DepthSource({
   note: (t) => ai.note('depth', t),
 });
 
-function depthSection() {
-  const rows = [];
-  const status = el('div', { class: 'hint' });
-  const show = () => {
-    const st = depth.status;
-    status.textContent = st === 'ready' ? `Depth Anything V2 small is loaded on ${depth.device}${depth.fps ? ` · about ${depth.fps} frames/s` : ''}. It runs while a Parallax camera layer is in the stack.`
-      : st === 'loading' ? `Loading the depth model${depth.progress ? ` (${depth.progress}%)` : '…'}`
-      : st === 'error' ? 'The depth model failed: ' + depth.error
-      : 'Not loaded. It loads on its own the first time a Parallax camera layer asks for it (about 50 MB, fetched once and kept).';
-  };
-  frameUpdaters.push(show); show();
-  rows.push(status);
-  rows.push(el('div', { class: 'row' }, [
-    el('button', { class: 'btn sm', text: 'Load now', onclick: () => depth.load() }),
-  ]));
-  rows.push(el('div', { class: 'hint', text: 'A second copy of the video runs a little ahead of the playhead; each frame’s depth is read by the model and handed to the parallax layers when the film reaches it, on every wall. Nothing leaves this Mac.' }));
-  return section('Depth (local model)', rows);
-}
 
 // ---------------------------------------------------------------- people ----
 const peopleView = new PeopleView($('#peopleView'), {
@@ -963,6 +878,22 @@ function refill(host, kids) {
   for (const k of kids) if (k) host.appendChild(k);
   host.scrollTop = Math.min(st, Math.max(0, host.scrollHeight - host.clientHeight));
 }
+// ---- the panels, each built from this window's context: the widgets, the
+// live project and state (through getters, since both are replaced on every
+// update from main), and the few services they call back into
+const panelCtx = {
+  W, updaters, frameUpdaters, stage, player, toast, pushProject, buildInspector, promptModal, outputSize,
+  previewSource, sourceReady, duplicateSelected, deleteSelected, toggleOutput, refreshMappings, depth,
+  fxHost, visualsHost, visuals,
+  project: () => project, state: () => S, displays: () => displays, audioDevices: () => audioDevices,
+  mappings: () => mappings, currentView: () => currentView,
+};
+const mapInspector = createMapInspector(panelCtx);
+const { mapsSection, layersSection, selectionSection, presetSection, mapSelectRow } = mapInspector;
+const setup = createSetupPanel({ ...panelCtx, mapSelectRow });
+const { outputSection, soundSetupSection, previewSection, streamsSection, mappingSection, helpSection, lookSection, depthSection } = setup;
+const { visualsSection, visualsBrowser } = createVisualsPanel(panelCtx);
+
 group('map').build = () => refill($('#stageInspector'), [mapsSection(), layersSection(), selectionSection(), presetSection()]);
 group('fx').build = () => {
   refill($('#fxHost'), [fxSection()]);
@@ -1037,763 +968,29 @@ function syncInspector() {
   for (const g of Object.values(GROUPS)) if (!g.dirty) for (const f of g.up) { try { f(); } catch {} }
 }
 
-function outputSection() {
-  const rows = [];
-  for (const role of ['projector', 'tv']) {
-    const cfg = S.outputs[role];
-    const sel = el('select', {});
-    sel.appendChild(el('option', { value: '', text: '— none —' }));
-    for (const d of displays) {
-      sel.appendChild(el('option', {
-        value: d.id,
-        text: `${d.label} ${d.size.width}x${d.size.height}${d.isPrimary ? ' (main)' : ''}`,
-      }));
-    }
-    sel.value = cfg.displayId || '';
-    sel.onchange = () => api.setOutput(role, { displayId: sel.value || null });
-    const on = toggle('On', () => S.outputs[role].enabled, () => toggleOutput(role), { push: false });
-    rows.push(el('div', { class: 'ctl wide' }, [
-      el('label', { text: role === 'projector' ? 'Projector' : 'TV' }),
-      el('div', { class: 'row nowrap' }, [sel, on]),
-    ]));
-    rows.push(mapSelectRow(role));
-    if (role === 'tv') {
-      rows.push(selectRow('Fit', [['contain', 'Contain (letterbox)'], ['cover', 'Cover (crop)'], ['stretch', 'Stretch']],
-        () => S.settings.fitMode, (v) => api.patchState({ settings: { fitMode: v } })));
-      rows.push(el('div', { class: 'row' }, [
-        toggle('Effects on the TV', () => S.outputs.tv.fx !== false, (v) => api.setOutput('tv', { fx: v }),
-          { push: false, tip: 'With the plain picture the TV is a second wall: the same video full-screen, the effects running over it, no shapes in their world. Give it a map and it is mapped like the projector.' }),
-      ]));
-    }
-  }
-  const pd = S.outputs.projector.displayId, td = S.outputs.tv.displayId;
-  if (pd && td && pd === td) {
-    rows.push(el('div', { class: 'hint', style: 'color:var(--mask)',
-      text: 'Projector and TV are both set to the same screen, so one covers the other. Pick different screens, or swap them.' }));
-  }
-  rows.push(el('div', { class: 'row' }, [
-    displays.length > 1 ? el('button', {
-      class: 'btn sm grow', text: 'Swap the two screens',
-      title: 'Send the projector to the TV\u2019s screen and vice versa',
-      onclick: () => api.swapOutputs().then(() => toast('Swapped')),
-    }) : null,
-    el('button', {
-      class: 'btn sm grow', text: 'Identify',
-      title: 'Flash the role and the screen name on each output window',
-      onclick: () => { api.identifyOutputs(); toast('Each open output names itself and its screen for a moment.'); },
-    }),
-    el('button', { class: 'btn sm', text: 'Reload', onclick: () => api.reloadAll() }),
-    el('button', { class: 'btn sm', text: 'Close all', title: 'Close every output window. Esc on an output window, or Cmd+Alt+P from anywhere, does the same.', onclick: () => api.closeAllOutputs() }),
-  ]));
-  return section('Outputs', rows, { help: 'Each output is a screen and a map: which surfaces and shapes it shows (Map view), or the plain full-screen picture. Output windows open without taking focus.' });
-}
 
-// which map an output shows; the plain full-screen picture is the other choice
-function mapSelectRow(role) {
-  const opts = [['fill', 'Plain picture, full screen'], ...project.maps.map((m) => [m.id, 'Map: ' + m.name])];
-  return selectRow(role === 'projector' ? 'Shows' : 'Shows', opts,
-    () => mapIdFor(project, S.outputs, role) || 'fill',
-    (v) => api.setOutput(role, { mapId: v }));
-}
 
-function soundSetupSection() {
-  const rows = [];
-  rows.push(selectRow('Audio from',
-    [['auto', 'Auto (first open output)'], ['tv', 'TV'], ['projector', 'Projector'],
-     ['control', 'This window'], ['none', 'Muted']],
-    () => S.settings.audioTarget || 'auto', (v) => api.patchState({ settings: { audioTarget: v } })));
-  rows.push(note('Playing from: ' + (S.audioOut || 'control') +
-    (S.settings.audioTarget !== 'auto' && S.settings.audioTarget !== S.audioOut && S.settings.audioTarget !== 'none'
-      ? '  (the ' + S.settings.audioTarget + ' window is not open)' : '')));
-  rows.push(selectRow('Device',
-    [['', 'System default'], ...audioDevices.map((d) => [d.id, d.label])],
-    () => S.settings.audioSinkId || '',
-    (v) => { const d = audioDevices.find((x) => x.id === v); api.patchState({ settings: { audioSinkId: v || null, audioSinkLabel: d ? d.label : null } }); },
-    { tip: 'Send the sound to a specific output (e.g. an AirPlay receiver) without changing the Mac\u2019s system default.' }));
-  return section('Sound', rows, { help: 'Which window plays the sound. The beat is read in that window and shared with every wall; how the effects react to it is under Effects \u2192 Sound.' });
-}
 
-function previewSection() {
-  const rows = [];
-  rows.push(selectRow('Quality',
-    [['auto', 'Small while an output is open'], ['low', 'Always small'], ['full', 'Always full size']],
-    () => S.settings.previewQuality || 'auto', (v) => api.patchState({ settings: { previewQuality: v } }),
-    { tip: 'The preview pulls its own copy of the video and draws every other frame while a wall is up. Keeping it small leaves the bandwidth and the GPU to the projector.' }));
-  rows.push(el('div', { class: 'row' }, [
-    toggle('Effects in the preview', () => project.fx.preview !== false, (v) => { project.fx.preview = v; }, { title: 'Simulate the effects in this window too. Off saves this Mac\u2019s GPU for the walls.' }),
-  ]));
-  return section('Preview', rows);
-}
 
-function streamsSection() {
-  const rows = [];
-  rows.push(selectRow('YouTube max', [['720', '720p'], ['1080', '1080p'], ['1440', '1440p'], ['2160', '4K']],
-    () => S.settings.maxHeight || 1080, (v) => api.patchState({ settings: { maxHeight: Number(v) } })));
-  rows.push(el('div', { class: 'row' }, [
-    toggle('Pre-download streams', () => S.settings.preDownload !== false, (v) => api.patchState({ settings: { preDownload: v } }),
-      { push: false, tip: 'Every streamed track is pulled down as it plays and played from disk next time. The last 25 stay in a cache (Library \u2192 Streamed lately); \u2605 Keep on a playlist item makes it part of the library.' }),
-  ]));
-  return section('Streams', rows);
-}
 
-// Named wall setups: save the geometry you spent an evening aligning, and get
-// it back by name. The live state is restored automatically anyway; this is
-// for keeping more than one of them.
-function mappingSection() {
-  const rows = [];
-  const cur = mappings.current;
-  const head = el('div', { class: 'hint' });
-  const showHead = () => {
-    const name = S && S.mappingName;
-    head.innerHTML = '';
-    head.appendChild(el('span', { text: name ? 'Loaded: ' : 'Not saved under a name yet' }));
-    if (name) head.appendChild(el('b', { text: name }));
-    if (S && S.dirty) head.appendChild(el('span', { class: 'tag', text: 'unsaved changes' }));
-  };
-  updaters.push(showHead); showHead();
-  rows.push(head);
 
-  const sel = el('select', {});
-  sel.appendChild(el('option', { value: '', text: mappings.items.length ? '— load a saved setup —' : '— nothing saved yet —' }));
-  for (const m of mappings.items) {
-    sel.appendChild(el('option', { value: m.name, text: m.name + (m.name === cur ? '  (current)' : '') }));
-  }
-  sel.value = '';
-  sel.onchange = () => {
-    const n = sel.value;
-    if (!n) return;
-    api.loadMapping(n)
-      .then(() => { stage.select(null, null); refreshMappings(); toast('Loaded ' + n); })
-      .catch((e) => toast('Could not load: ' + e.message));
-  };
-  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'Setups' }), sel]));
 
-  const name = el('input', { type: 'text', id: 'mapName', placeholder: 'Name this wall setup' });
-  name.value = mappingName || cur || '';
-  name.oninput = () => { mappingName = name.value; };
-  name.onkeydown = (e) => { if (e.key === 'Enter') save(); };
-  const save = () => {
-    const n = (name.value || '').trim();
-    if (!n) { toast('Give the setup a name first'); name.focus(); return; }
-    api.saveMapping(n).then((saved) => { mappingName = saved; refreshMappings(); toast('Saved ' + saved); });
-  };
-  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'Name' }), name]));
-  rows.push(el('div', { class: 'row' }, [
-    el('button', { class: 'btn grow', text: 'Save', title: 'Save the current walls, masks and effects under this name', onclick: save }),
-    el('button', {
-      class: 'btn danger', text: 'Delete', disabled: !cur ? '' : null,
-      onclick: () => {
-        if (!cur) return;
-        api.deleteMapping(cur).then(() => { mappingName = ''; refreshMappings(); toast('Deleted ' + cur); });
-      },
-    }),
-    el('button', { class: 'btn', text: '\u2026', title: 'Show the files in Finder', onclick: () => api.revealMappings() }),
-  ]));
-  return section('Snapshots', rows, { help: 'A snapshot of everything: every map, the effects and the settings. Whatever you last had on screen comes back by itself when you reopen the app; snapshots are for keeping whole evenings and going back to them.' });
-}
 
-function selectionSection() {
-  const o = stage.selected();
-  if (!o) return section('Selection', [note('Click a surface or a shape on the stage to edit it.')]);
-  const isSurf = stage.sel.type === 'surface';
-  const rows = [textRow('Name', () => o.name, (v) => (o.name = v))];
-  rows.push(el('div', { class: 'row' }, [
-    toggle('Enabled', () => o.enabled, (v) => (o.enabled = v)),
-    el('button', { class: 'btn', text: 'Duplicate', onclick: duplicateSelected }),
-    el('button', { class: 'btn danger', text: 'Delete', onclick: deleteSelected }),
-  ]));
 
-  if (isSurf) {
-    const content = o.content || (o.content = defaultContent());
-    rows.push(el('div', { class: 'fxhead', text: 'Shows' }));
-    rows.push(selectRow('Content', CONTENT_KINDS, () => content.kind || 'video', (v) => { content.kind = v; pushProject(true); buildInspector(); }));
-    if (content.kind === 'visuals') {
-      rows.push(selectRow('Scene', [['auto', 'Mix (every scene in turn)'], ...VISUAL_SCENES], () => content.scene || 'auto', (v) => { content.scene = v; pushProject(true); },
-        { tip: 'This surface runs its own generated scene to the music, whatever the others show. Its speed, colours and tempo follow the Visuals settings.' }));
-    } else if (content.kind === 'colour') {
-      rows.push(colorRow('Colour', () => content.colour || '#303030', (v) => { content.colour = v; }));
-    } else if (content.kind === 'off') {
-      rows.push(note('Nothing is drawn here; the surface stays dark but keeps its place.'));
-    }
-    rows.push(el('div', { class: 'row' }, [
-      el('button', { class: 'btn sm grow', text: 'Turn into a shape', title: 'The same outline, but black: a painting or a piece of furniture the projector must not light', onclick: () => surfaceToShape(o) }),
-    ]));
-    if (content.kind === 'video') {
-    rows.push(head('Region of the picture', 'Which part of the video lands on this surface. Drag the box; several surfaces can share one picture by taking neighbouring regions (see Presets).'));
-    rows.push(srcMapWidget(o));
-    rows.push(el('div', { class: 'quad' }, [
-      numberRow('x', () => o.src.x, (v) => (o.src.x = v)),
-      numberRow('y', () => o.src.y, (v) => (o.src.y = v)),
-      numberRow('w', () => o.src.w, (v) => (o.src.w = v)),
-      numberRow('h', () => o.src.h, (v) => (o.src.h = v)),
-    ]));
-    rows.push(el('div', { class: 'row' }, ['Full', 'Left', 'Right', 'Top', 'Bottom'].map((k) =>
-      el('button', {
-        class: 'btn sm grow', text: k, onclick: () => {
-          const r = { Full: [0, 0, 1, 1], Left: [0, 0, 0.5, 1], Right: [0.5, 0, 0.5, 1], Top: [0, 0, 1, 0.5], Bottom: [0, 0.5, 1, 0.5] }[k];
-          o.src = { x: r[0], y: r[1], w: r[2], h: r[3] };
-          pushProject(true);
-        },
-      }))));
-    }
 
-    rows.push(head('Geometry', 'The warp grid: raise it for curved or uneven walls, then drag the inner points.'));
-    const meshRow = el('div', { class: 'row' }, [
-      el('label', { class: 'grow hint', text: `Grid ${o.mesh.cols} x ${o.mesh.rows}`, title: 'Raise the grid for curved or uneven walls' }),
-      el('button', { class: 'btn icon', text: '−', onclick: () => setMesh(o, -1) }),
-      el('button', { class: 'btn icon', text: '+', onclick: () => setMesh(o, 1) }),
-      el('button', { class: 'btn', text: 'Flat', onclick: () => setMesh(o, 0) }),
-    ]);
-    rows.push(meshRow);
-    rows.push(el('div', { class: 'row' }, [
-      el('button', { class: 'btn grow', text: 'Fill output', onclick: () => { o.mesh = { cols: 1, rows: 1, pts: [[0, 0], [1, 0], [0, 1], [1, 1]] }; pushProject(true); } }),
-      el('button', { class: 'btn grow', text: 'Keep aspect', onclick: () => fitAspect(o) }),
-    ]));
 
-    rows.push(head('Edge blend', 'Soften an edge to hide the seam between two walls.'));
-    rows.push(slider('Left', () => o.feather.l, (v) => (o.feather.l = v), { max: 0.5, fmt: pc }));
-    rows.push(slider('Right', () => o.feather.r, (v) => (o.feather.r = v), { max: 0.5, fmt: pc }));
-    rows.push(slider('Top', () => o.feather.t, (v) => (o.feather.t = v), { max: 0.5, fmt: pc }));
-    rows.push(slider('Bottom', () => o.feather.b, (v) => (o.feather.b = v), { max: 0.5, fmt: pc }));
-
-    rows.push(el('div', { class: 'row' }, [
-      toggle('Flip H', () => o.fx.flipH, (v) => (o.fx.flipH = v)),
-      toggle('Flip V', () => o.fx.flipV, (v) => (o.fx.flipV = v)),
-      el('button', {
-        class: 'btn sm', text: 'Rotate 90', onclick: () => { o.fx.rot = ((o.fx.rot | 0) + 1) % 4; pushProject(true); },
-      }),
-    ]));
-    rows.push(head('Colour', 'Match brightness and colour between walls.'));
-    rows.push(slider('Opacity', () => o.fx.opacity, (v) => (o.fx.opacity = v), { max: 1, fmt: pc }));
-    rows.push(slider('Brightness', () => o.fx.brightness, (v) => (o.fx.brightness = v), { min: -0.5, max: 0.5 }));
-    rows.push(slider('Contrast', () => o.fx.contrast, (v) => (o.fx.contrast = v), { min: 0.2, max: 2.5 }));
-    rows.push(slider('Saturation', () => o.fx.saturation, (v) => (o.fx.saturation = v), { min: 0, max: 3 }));
-    rows.push(slider('Gamma', () => o.fx.gamma, (v) => (o.fx.gamma = v), { min: 0.3, max: 3 }));
-    rows.push(slider('Hue', () => o.fx.hue, (v) => (o.fx.hue = v), { min: -3.14, max: 3.14 }));
-  } else {
-    rows.push(el('div', { class: 'row' }, [
-      toggle('Effects see this shape', () => o.fxCollide !== false, (v) => { o.fxCollide = v; pushProject(true); }),
-      toggle('Invert: light only inside', () => o.invert, (v) => (o.invert = v), { title: 'Black out everything except this shape' }),
-    ]));
-    rows.push(el('div', { class: 'row' }, [
-      el('button', { class: 'btn sm grow', text: 'Turn into a surface', title: 'The same outline, but lit: the picture goes there', onclick: () => shapeToSurface(o) }),
-    ]));
-    rows.push(slider('Softness', () => o.feather, (v) => (o.feather = v), { min: 0, max: 120, step: 1, fmt: (v) => v + 'px' }));
-    rows.push(slider('Grow', () => o.grow, (v) => (o.grow = v), { min: -60, max: 60, step: 1, fmt: (v) => v + 'px' }));
-    rows.push(slider('Strength', () => o.opacity, (v) => (o.opacity = v), { max: 1, fmt: pc }));
-    rows.push(note(`${o.points.length} points \u2014 double-click an edge to add one, Backspace on a point to remove it.`));
-  }
-  return section('Selection', rows, { help: isSurf
-    ? 'A surface is where the picture goes: drag its corners onto the wall.'
-    : 'A shape is something on the wall the projector must not light. It stays black, and the effects treat it as solid: balls land on it, water flows round it, the Shapes effects act on it.' });
-}
-
-function setMesh(o, d) {
-  let c = o.mesh.cols, r = o.mesh.rows;
-  if (d === 0) { c = 1; r = 1; }
-  else { c = clamp(c + d, 1, 12); r = clamp(r + d, 1, 12); }
-  o.mesh = Mesh.resample(o.mesh, c, r);
-  pushProject(true);
-  buildInspector();
-}
-
-function fitAspect(o) {
-  const [ow, oh] = outputSize();
-  const [vw, vh] = player.video.videoWidth ? [player.video.videoWidth, player.video.videoHeight] : [16, 9];
-  const srcA = (vw * o.src.w) / (vh * o.src.h);
-  const c = Mesh.corners(o.mesh);
-  const cx = (c[0][0] + c[1][0] + c[2][0] + c[3][0]) / 4;
-  const cy = (c[0][1] + c[1][1] + c[2][1] + c[3][1]) / 4;
-  const wN = Math.max(...c.map((p) => p[0])) - Math.min(...c.map((p) => p[0]));
-  const hN = Math.max(...c.map((p) => p[1])) - Math.min(...c.map((p) => p[1]));
-  let w = wN, h = (wN * ow) / srcA / oh;
-  if (h > hN) { h = hN; w = (hN * oh * srcA) / ow; }
-  o.mesh = { cols: 1, rows: 1, pts: [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx - w / 2, cy + h / 2], [cx + w / 2, cy + h / 2]] };
-  pushProject(true);
-}
-
-// small draggable view of the video frame showing this surface's source region
-function srcMapWidget(o) {
-  const wrap = el('div', { style: 'position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:5px;overflow:hidden' });
-  const cv = el('canvas', { style: 'position:absolute;inset:0;width:100%;height:100%' });
-  wrap.appendChild(cv);
-  const draw = () => {
-    const r = wrap.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = Math.max(1, r.width * dpr); cv.height = Math.max(1, r.height * dpr);
-    const x = cv.getContext('2d');
-    x.setTransform(dpr, 0, 0, dpr, 0, 0);
-    x.clearRect(0, 0, r.width, r.height);
-    const src = previewSource();
-    if (sourceReady(src)) {
-      try { x.drawImage(src, 0, 0, r.width, r.height); } catch {}
-      x.globalAlpha = 0.55; x.fillStyle = '#000';
-      x.fillRect(0, 0, r.width, r.height);
-      x.globalAlpha = 1;
-      try {
-        x.save();
-        x.beginPath();
-        x.rect(o.src.x * r.width, o.src.y * r.height, o.src.w * r.width, o.src.h * r.height);
-        x.clip();
-        x.drawImage(src, 0, 0, r.width, r.height);
-        x.restore();
-      } catch {}
-    }
-    for (const s of project.surfaces) {
-      const cur = s.id === o.id;
-      x.strokeStyle = cur ? '#00d4ff' : 'rgba(255,255,255,.25)';
-      x.lineWidth = cur ? 2 : 1;
-      x.strokeRect(s.src.x * r.width, s.src.y * r.height, s.src.w * r.width, s.src.h * r.height);
-    }
-    const hx = (o.src.x + o.src.w) * r.width, hy = (o.src.y + o.src.h) * r.height;
-    x.fillStyle = '#00d4ff';
-    x.fillRect(hx - 4, hy - 4, 8, 8);
-  };
-  updaters.push(draw);
-  requestAnimationFrame(draw);
-  srcMapWidget.redraw = draw;
-
-  let mode = null, st = null;
-  wrap.addEventListener('pointerdown', (e) => {
-    const r = wrap.getBoundingClientRect();
-    const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
-    const nearHandle = Math.hypot(u - (o.src.x + o.src.w), v - (o.src.y + o.src.h)) < 0.05;
-    mode = nearHandle ? 'size' : 'move';
-    st = { u, v, src: { ...o.src } };
-    wrap.setPointerCapture(e.pointerId);
-  });
-  wrap.addEventListener('pointermove', (e) => {
-    if (!mode) return;
-    const r = wrap.getBoundingClientRect();
-    const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
-    if (mode === 'move') {
-      o.src.x = clamp(st.src.x + (u - st.u), 0, 1 - o.src.w);
-      o.src.y = clamp(st.src.y + (v - st.v), 0, 1 - o.src.h);
-    } else {
-      o.src.w = clamp(st.src.w + (u - st.u), 0.02, 1 - o.src.x);
-      o.src.h = clamp(st.src.h + (v - st.v), 0.02, 1 - o.src.y);
-    }
-    pushProject();
-    draw();
-  });
-  wrap.addEventListener('pointerup', () => { mode = null; pushProject(true); });
-  return wrap;
-}
-
-function layerRow(o, kind, i, list) {
-  const on = stage.sel?.id === o.id;
-  const chk = el('input', { type: 'checkbox', title: 'Show / hide' });
-  chk.checked = !!o.enabled;
-  chk.onclick = (e) => e.stopPropagation();
-  chk.onchange = () => { o.enabled = chk.checked; pushProject(true); buildInspector(); };
-  const kindTxt = kind === 'surface' && o.content && o.content.kind !== 'video'
-    ? (CONTENT_KINDS.find((k) => k[0] === o.content.kind) || [])[1] : null;
-  const row = el('div', { class: 'lay' + (on ? ' on' : '') + (o.enabled ? ' vis' : '') + (kind === 'mask' ? ' mk' : '') }, [
-    chk,
-    el('span', { class: 'nm', title: o.name }, [
-      el('span', { text: (kind === 'surface' ? (i + 1) + '. ' : '') + (o.name || kind) }),
-      kindTxt ? el('span', { class: 'cn', text: kindTxt.toLowerCase() }) : null,
-    ]),
-    el('span', { class: 'ar', text: '\u25B2', title: 'Move up',
-      onclick: (e) => { e.stopPropagation(); if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); pushProject(true); buildInspector(); } } }),
-    el('span', { class: 'ar', text: '\u25BC', title: 'Move down',
-      onclick: (e) => { e.stopPropagation(); if (i < list.length - 1) { list.splice(i + 1, 0, list.splice(i, 1)[0]); pushProject(true); buildInspector(); } } }),
-  ]);
-  row.onclick = () => { stage.select(kind, o.id); buildInspector(); };
-  return row;
-}
-
-function layersSection() {
-  const rows = [];
-  rows.push(head('Surfaces'));
-  if (!project.surfaces.length) rows.push(el('div', { class: 'hint', text: 'none \u2014 press + Surface' }));
-  project.surfaces.forEach((o, i) => rows.push(layerRow(o, 'surface', i, project.surfaces)));
-  rows.push(el('div', { class: 'fxhead', text: 'Shapes' }));
-  if (!project.masks.length) rows.push(el('div', { class: 'hint', text: 'none \u2014 press + Shape, or turn a surface into one' }));
-  project.masks.forEach((o, i) => rows.push(layerRow(o, 'mask', i, project.masks)));
-  if (project.masks.length) rows.push(el('div', { class: 'row', style: 'margin-top:4px' }, [
-    el('button', { class: 'btn sm grow', text: 'All shapes on', onclick: () => { project.masks.forEach((m) => (m.enabled = true)); pushProject(true); buildInspector(); } }),
-    el('button', { class: 'btn sm grow', text: 'All off', onclick: () => { project.masks.forEach((m) => (m.enabled = false)); pushProject(true); buildInspector(); } }),
-  ]));
-  return section('Surfaces & shapes', rows, { help: 'Surfaces are where the picture goes: quads you drag onto the wall. Shapes are things the projector must not light \u2014 a painting, the plant, the couch; they stay black and the effects treat them as solid.' });
-}
 
 // ------------------------------------------------------------------- maps --
-// A project holds several maps; each output shows one of them.
-function editMap(id) {
-  project.mapId = id;
-  ensureMaps(project);
-  stage.select(null, null);
-  pushProject(true);
-  buildInspector();
-}
-function freshIds(map) {
-  for (const sf of map.surfaces) sf.id = uid('surf');
-  for (const m of map.masks) m.id = uid('mask');
-  return map;
-}
-function mapsSection() {
-  const maps = project.maps;
-  const rows = [];
-  const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px' });
-  const pid = mapIdFor(project, S.outputs, 'projector'), tid = mapIdFor(project, S.outputs, 'tv');
-  maps.forEach((m, i) => {
-    const on = m.id === project.mapId;
-    const tags = [];
-    if (m.id === pid) tags.push('projector');
-    if (m.id === tid) tags.push('TV');
-    const row = el('div', { class: 'mapRow' + (on ? ' on' : ''), title: `${m.surfaces.length} surface${m.surfaces.length === 1 ? '' : 's'}, ${m.masks.length} shape${m.masks.length === 1 ? '' : 's'}` }, [
-      el('span', { class: 'nm', text: m.name }),
-      ...tags.map((t) => el('span', { class: 'tag', text: t, title: 'Shown on the ' + t })),
-      el('span', { class: 'ar', text: '\u270E', title: 'Rename', onclick: async (e) => {
-        e.stopPropagation();
-        const n = await promptModal('Name this map', m.name);
-        if (n && n.trim()) { m.name = n.trim(); pushProject(true); buildInspector(); }
-      } }),
-      el('span', { class: 'ar', text: '\u2398', title: 'Duplicate', onclick: (e) => {
-        e.stopPropagation();
-        const copy = freshIds(JSON.parse(JSON.stringify(m)));
-        copy.id = uid('map'); copy.name = m.name + ' copy';
-        maps.splice(i + 1, 0, copy);
-        editMap(copy.id);
-      } }),
-      el('span', { class: 'ar', text: '\u2715', title: 'Delete', onclick: (e) => {
-        e.stopPropagation();
-        if (maps.length < 2) { toast('Keep at least one map'); return; }
-        maps.splice(i, 1);
-        editMap(maps[Math.max(0, i - 1)].id);
-      } }),
-    ]);
-    row.onclick = () => editMap(m.id);
-    list.appendChild(row);
-  });
-  rows.push(list);
-  rows.push(el('div', { class: 'row' }, [
-    el('button', { class: 'btn sm grow', text: '+ New map', onclick: () => {
-      const m = defaultMap({ name: 'Map ' + (maps.length + 1) });
-      maps.push(m); editMap(m.id);
-    } }),
-    el('button', { class: 'btn sm grow', text: '+ Empty map', onclick: () => {
-      const m = defaultMap({ name: 'Map ' + (maps.length + 1), surfaces: [] });
-      maps.push(m); editMap(m.id);
-    } }),
-  ]));
-  rows.push(head('Shown on', 'Which map each wall shows. The preview beside the other views shows the wall it is switched to; here you edit the map selected above, whichever wall it is on.'));
-  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'Projector' }), mapSelectRow('projector').lastChild]));
-  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'TV' }), mapSelectRow('tv').lastChild]));
-  return section('Maps', rows, { help: 'A map is one arrangement of surfaces and shapes: one per wall, or several versions of the same wall. Each output shows the map you give it.' });
-}
 
-// a surface becomes a shape of the same outline, and back
-function surfaceToShape(o) {
-  const i = project.surfaces.indexOf(o);
-  if (i < 0) return;
-  const c = Mesh.corners(o.mesh);
-  const m = defaultMask({ name: o.name, points: c.map((q) => [q[0], q[1]]) });
-  project.masks.push(m);
-  project.surfaces.splice(i, 1);
-  stage.select('mask', m.id);
-  pushProject(true); buildInspector();
-  toast(o.name + ' is now a shape: it stays black and the effects treat it as solid', 2200);
-}
-function shapeToSurface(m) {
-  const i = project.masks.indexOf(m);
-  if (i < 0) return;
-  let pts;
-  if (m.points.length === 4) pts = [m.points[0], m.points[1], m.points[3], m.points[2]];
-  else {
-    const xs = m.points.map((q) => q[0]), ys = m.points.map((q) => q[1]);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    pts = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
-  }
-  const sf = defaultSurface({ name: m.name, mesh: { cols: 1, rows: 1, pts: pts.map((q) => [q[0], q[1]]) } });
-  project.surfaces.push(sf);
-  project.masks.splice(i, 1);
-  stage.select('surface', sf.id);
-  pushProject(true); buildInspector();
-  toast(m.name + ' is now a surface: the picture goes there', 2200);
-}
 
-// the emoji the two emoji scenes draw from; applied when the field is left
-function emojiRow() {
-  const inp = el('input', { type: 'text', placeholder: DEFAULT_VISUAL_EMOJI });
-  const show = () => { if (document.activeElement !== inp) inp.value = visualsCfg().emoji || ''; };
-  inp.onchange = () => patchVisualsCfg({ emoji: inp.value.trim() || DEFAULT_VISUAL_EMOJI });
-  inp.onkeydown = (e) => e.stopPropagation();
-  updaters.push(show); show();
-  return el('div', { class: 'ctl wide' }, [el('label', { text: 'Emoji' }), inp]);
-}
 
-function visualsSection() {
-  const cfg = visualsCfg;
-  const sceneName = (sc) => (VISUAL_SCENES.find((x) => x[0] === sc) || [sc, sc])[1];
-  // what the wall shows right now, and why
-  const nowLine = el('div', { class: 'visNow' });
-  const why = el('div', { class: 'hint' });
-  const showNow = () => {
-    const mode = visualsMode();
-    const pattern = !!(project.global.testPattern && project.global.testPattern !== 'off');
-    const on = !pattern && visualsOn(S);
-    const sc = visualsHost.scene;
-    const txt = pattern ? 'A test pattern' : !on ? 'The video' : visualsHost.error ? 'Visuals failed' : 'Visuals \u00b7 ' + (sc ? sceneName(sc) : '\u2026');
-    const reason = pattern ? 'A test pattern is up (Map view). Set it to Off to see the picture again.'
-      : on && visualsHost.error ? visualsHost.error
-      : mode === 'music' ? 'An Apple Music song has no picture, so visuals stand in for it.'
-      : mode === 'always' ? 'Visuals replace every video.'
-      : mode === 'track' ? 'This track is marked to play with visuals. Other tracks show their video.'
-      : 'Visuals are off for this track.';
-    if (nowLine.textContent !== txt) nowLine.textContent = txt;
-    if (why.textContent !== reason) why.textContent = reason;
-    nowLine.classList.toggle('vis', on);
-  };
-  frameUpdaters.push(showNow); showNow();
 
-  // whose settings the controls below edit
-  const scope = el('div', { class: 'hint' });
-  const showScope = () => {
-    const own = hasVisualsOverride(S);
-    const t = S.transport.source && S.transport.source.title;
-    scope.textContent = own ? 'These settings belong to this track' + (t ? ' (' + t + ')' : '') + '.' : 'These settings are shared by every track.';
-  };
-  updaters.push(showScope); showScope();
 
-  const held = el('div', { class: 'hint' });
-  const showHeld = () => {
-    const c = cfg();
-    const sc = c.scene;
-    const when = c.changeOn === 'seconds' ? 'every ' + c.every + ' s' : 'every ' + (c.everyBars || 8) + ' bars';
-    held.textContent = sc && sc !== 'auto'
-      ? 'Holding ' + sceneName(sc) + '. Click Mix in the catalogue to let the scenes change again.'
-      : 'Mixing every scene, a new one ' + when + '. Click a scene to hold it.';
-  };
-  updaters.push(showHeld); showHeld();
 
-  // tempo: what the clock is locked to
-  const tempoLine = el('div', { class: 'hint mono' });
-  const showTempo = () => {
-    const c = cfg();
-    const v = visualsHost.visuals;
-    const t = v && v.tempo ? v.tempo : null;
-    const f = fxHost.features();
-    let txt;
-    if (c.bpm > 0) txt = 'Set by hand: ' + Math.round(c.bpm) + ' bpm';
-    else if (t && t.source === 'auto' && t.bpm) txt = 'Detected ' + Math.round(t.bpm) + ' bpm' + (t.locked ? ', locked' : ', settling\u2026');
-    else if (f.bpm) txt = 'Detected ' + f.bpm + ' bpm';
-    else txt = 'No tempo yet \u2014 waiting for the beat';
-    if (tempoLine.textContent !== txt) tempoLine.textContent = txt;
-  };
-  frameUpdaters.push(showTempo); showTempo();
-  // a tempo set by hand: a number, or tapped in
-  const bpmInp = el('input', { type: 'number', min: 40, max: 220, step: 1, placeholder: 'auto' });
-  const showBpm = () => { if (document.activeElement !== bpmInp) bpmInp.value = cfg().bpm > 0 ? Math.round(cfg().bpm) : ''; };
-  bpmInp.onchange = () => { const v = Number(bpmInp.value); patchVisualsCfg({ bpm: v >= 40 && v <= 220 ? v : 0 }); };
-  bpmInp.onkeydown = (e) => e.stopPropagation();
-  updaters.push(showBpm); showBpm();
-  const taps = [];
-  const tapBtn = el('button', { class: 'btn sm', text: 'Tap', title: 'Click along with the beat (four taps or more)', onclick: () => {
-    const now = performance.now();
-    if (taps.length && now - taps[taps.length - 1] > 2500) taps.length = 0;
-    taps.push(now);
-    while (taps.length > 12) taps.shift();
-    if (taps.length < 4) { tapBtn.textContent = 'Tap ' + taps.length + '\u2026'; return; }
-    const gaps = []; for (let i = 1; i < taps.length; i++) gaps.push(taps[i] - taps[i - 1]);
-    gaps.sort((a, b) => a - b);
-    const bpm = Math.round(60000 / gaps[gaps.length >> 1]);
-    tapBtn.textContent = 'Tap';
-    patchVisualsCfg({ bpm: Math.max(40, Math.min(220, bpm)) });
-    toast('Tempo set to ' + bpm + ' bpm', 1400);
-  } });
-  const autoBtn = el('button', { class: 'btn sm', text: 'Auto', title: 'Follow the detected tempo again', onclick: () => { taps.length = 0; patchVisualsCfg({ bpm: 0 }); } });
 
-  // settings that belong to one scene show only while that scene is chosen
-  const forScene = (test, rows) => {
-    const box = el('div', { class: 'visFor' }, rows);
-    const show = () => { box.hidden = !test(cfg().scene); };
-    updaters.push(show); show();
-    return box;
-  };
-  const whenChange = (test, rows) => {
-    const box = el('div', { class: 'visFor' }, rows);
-    const show = () => { box.hidden = !test(cfg()); };
-    updaters.push(show); show();
-    return box;
-  };
-  const n2 = (v) => Number(v).toFixed(2);
-  return section('Visuals', [
-    note('On the wall now'),
-    nowLine,
-    why,
 
-    head('Settings for'),
-    el('div', { class: 'row' }, [
-      toggle('Remember for this track', () => hasVisualsOverride(S), (v) => setVisualsOverride(v), { push: false, title: 'Keep a separate set of the settings below for this track' }),
-    ]),
-    scope,
 
-    head('Tempo'),
-    tempoLine,
-    el('div', { class: 'ctl wide' }, [el('label', { text: 'BPM' }), el('div', { class: 'row nowrap' }, [bpmInp, tapBtn, autoBtn])]),
-    selectRow('Motion', [['beat', 'Locked to the beat'], ['free', 'Free, pushed by loudness']], () => cfg().sync || 'beat', (v) => patchVisualsCfg({ sync: v }),
-      { tip: 'Locked, every scene steps with the beat and the tempo is read from the music; set the BPM by hand or tap it when the detector gets a track wrong.' }),
 
-    head('Feel'),
-    slider('Speed', () => cfg().speed, (v) => patchVisualsCfg({ speed: v }), { min: 0.2, max: 3, step: 0.05, fmt: (v) => n2(v) + 'x', push: false }),
-    slider('Responds', () => cfg().react, (v) => patchVisualsCfg({ react: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false, tip: 'How much the loudness and the bands drive the picture' }),
-    slider('Beat kick', () => cfg().kick == null ? 1 : cfg().kick, (v) => patchVisualsCfg({ kick: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false, tip: 'How hard each beat hits' }),
-    slider('Smoothing', () => cfg().smooth == null ? 0.3 : cfg().smooth, (v) => patchVisualsCfg({ smooth: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false, tip: 'Steadies a jittery track' }),
-    slider('Brightness', () => cfg().gain == null ? 1 : cfg().gain, (v) => patchVisualsCfg({ gain: v }), { min: 0.3, max: 2, step: 0.05, fmt: pc, push: false }),
-
-    head('Scenes'),
-    held,
-    selectRow('Change', [['bars', 'On the bar'], ['seconds', 'On a timer']], () => cfg().changeOn || 'bars', (v) => patchVisualsCfg({ changeOn: v })),
-    whenChange((c) => (c.changeOn || 'bars') === 'bars', [
-      selectRow('Every', [['4', '4 bars'], ['8', '8 bars'], ['16', '16 bars'], ['32', '32 bars']], () => String(cfg().everyBars || 8), (v) => patchVisualsCfg({ everyBars: Number(v) })),
-    ]),
-    whenChange((c) => c.changeOn === 'seconds', [
-      slider('Every', () => cfg().every, (v) => patchVisualsCfg({ every: v }), { min: 10, max: 120, step: 5, fmt: (v) => v + ' s', push: false }),
-    ]),
-    selectRow('Colours', VISUAL_PALETTE_NAMES, () => cfg().palette, (v) => patchVisualsCfg({ palette: v })),
-    forScene((sc) => sc === 'emoji' || sc === 'emojiwall', [emojiRow()]),
-    forScene((sc) => sc === 'train', [
-      selectRow('City', VISUAL_CITIES, () => cfg().city, (v) => patchVisualsCfg({ city: v })),
-      selectRow('Time of day', VISUAL_DAYTIMES, () => cfg().daytime, (v) => patchVisualsCfg({ daytime: v })),
-      slider('Haze', () => cfg().haze, (v) => patchVisualsCfg({ haze: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
-      slider('Line height', () => cfg().ride, (v) => patchVisualsCfg({ ride: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
-    ]),
-    el('div', { class: 'row' }, [
-      el('button', { class: 'btn sm grow', text: 'Reset these settings', onclick: () => {
-        const key = videoKey(S.transport.source);
-        if (key && hasVisualsOverride(S)) { const by = { ...(S.settings.visualsByKey || {}) }; by[key] = {}; api.patchState({ settings: { visualsByKey: by } }); }
-        else api.patchState({ settings: { visualsCfg: defaultVisualsCfg() } });
-      } }),
-    ]),
-  ], { help: 'Generated scenes in place of the picture. Video / Visuals \u00b7 track / Visuals \u00b7 all in the top bar decides when they show: for this track only (H, or \u25D0 on a playlist item), or instead of every video. The mapping, the shapes, the TV and the effects all apply on top.' });
-}
-
-function lookSection() {
-  const motion = el('div', { class: 'hint' });
-  const showMotion = () => {
-    const fps = stage.engine.sourceFps;
-    const rate = fps ? fps.toFixed(0) + ' fps' : 'unknown';
-    const txt = (project.global.smoothMotion ? 'Cross-fading between frames. ' : '') + 'Source is ' + rate + '.';
-    if (motion.textContent !== txt) motion.textContent = txt;
-  };
-  frameUpdaters.push(showMotion); showMotion();
-  return section('Picture', [
-    slider('Brightness', () => project.global.brightness, (v) => (project.global.brightness = v), { min: 0, max: 1, fmt: pc }),
-    el('div', { class: 'row' }, [
-      toggle('Blackout', () => project.global.blackout, (v) => (project.global.blackout = v), { tip: 'Kills the projector output instantly (B)' }),
-      toggle('Wall guides', () => project.global.showGuides, (v) => (project.global.showGuides = v), { tip: 'Draws the surface outlines onto the wall itself (G)' }),
-    ]),
-    el('div', { class: 'row' }, [
-      toggle('Smooth motion', () => project.global.smoothMotion, (v) => (project.global.smoothMotion = v),
-        { tip: 'Film at 24 or 25 fps on a 60 Hz projector lands on an uneven 3:2 cadence, which reads as judder on slow pans. Smoothing cross-fades between frames to even it out, at the cost of a little motion blur.' }),
-    ]),
-    motion,
-  ]);
-}
-
-function presetSection() {
-  const two = twoWallControls() || [];
-  return section('Presets', [
-    ...two,
-    el('button', { class: 'btn', text: 'Set up two walls', title: 'The video split across a main wall and a side wall, each warped on its own, with a soft seam', onclick: twoWallPreset }),
-    el('button', { class: 'btn', text: 'One wall, full output', onclick: () => {
-      project.surfaces = [defaultSurface({ name: 'Wall', mesh: { cols: 1, rows: 1, pts: [[0, 0], [1, 0], [0, 1], [1, 1]] } })];
-      stage.select('surface', project.surfaces[0].id);
-      pushProject(true); buildInspector();
-    } }),
-    head('Several surfaces, one picture'),
-    el('button', { class: 'btn', text: 'Spread the video across all surfaces', onclick: spreadAcrossAreas }),
-    el('button', { class: 'btn', text: 'Whole video on every surface', onclick: () => {
-      project.surfaces.forEach((s) => (s.src = { x: 0, y: 0, w: 1, h: 1 }));
-      pushProject(true); buildInspector();
-      toast('Every surface now shows the whole video.');
-    } }),
-    el('div', { class: 'row' }, [
-      el('button', { class: 'btn grow', text: 'Save mapping', onclick: () => api.saveProject(false).then((p) => p && toast('Saved ' + p)) }),
-      el('button', { class: 'btn grow', text: 'Open…', onclick: () => api.openProject() }),
-    ]),
-  ], { help: 'Starting points for this map, and the mapping as a file you can keep per setup.' });
-}
-
-const SEAM_OVERLAP = 0.004;   // hairline overlap so no black line shows at the corner
-
-function twoWallPreset() {
-  const split = 0.6;
-  const main = defaultSurface({
-    name: 'Main wall',
-    src: { x: 0, y: 0, w: split, h: 1 },
-    mesh: { cols: 1, rows: 1, pts: [[0, 0], [split + SEAM_OVERLAP, 0], [0, 1], [split + SEAM_OVERLAP, 1]] },
-  });
-  const side = defaultSurface({
-    name: 'Side wall',
-    src: { x: split, y: 0, w: 1 - split, h: 1 },
-    mesh: { cols: 1, rows: 1, pts: [[split, 0.06], [1, 0.16], [split, 0.94], [1, 0.84]] },
-  });
-  project.surfaces = [main, side];
-  stage.select('surface', side.id);
-  pushProject(true);
-  buildInspector();
-  toast('Drag the side wall corners onto the real wall corner, then use Content split so shapes stay undistorted.');
-}
-
-// Two-wall helpers: move the seam, and change how much video each wall gets.
-function twoWallControls() {
-  if (project.surfaces.length !== 2) return null;
-  const [a, b] = project.surfaces;
-  const seamAt = () => a.mesh.pts[1][0] - SEAM_OVERLAP;
-  const setSeam = (v) => {
-    v = clamp(v, 0.05, 0.95);
-    a.mesh.pts[1][0] = v + SEAM_OVERLAP;
-    a.mesh.pts[3][0] = v + SEAM_OVERLAP;
-    b.mesh.pts[0][0] = v;
-    b.mesh.pts[2][0] = v;
-  };
-  const setContent = (v) => {
-    v = clamp(v, 0.05, 0.95);
-    a.src.x = 0; a.src.w = v;
-    b.src.x = v; b.src.w = 1 - v;
-  };
-  return [
-    slider('Corner at', seamAt, setSeam, { min: 0.05, max: 0.95, fmt: pc, tip: 'The seam: where the wall corner falls on the projector output' }),
-    slider('Split', () => a.src.w, setContent, { min: 0.05, max: 0.95, fmt: pc, tip: 'The share of the video given to the main wall. Tune until circles stay round across the corner.' }),
-  ];
-}
-
-// Give each area a slice of the video proportional to how wide it is on the
-// output, left to right - the starting point for one picture across many walls.
-function spreadAcrossAreas() {
-  const list = project.surfaces.filter((s) => s.enabled);
-  if (list.length < 2) return toast('Draw at least two surfaces first');
-  const info = list.map((s) => {
-    const c = Mesh.corners(s.mesh);
-    const w = Math.abs(((c[1][0] - c[0][0]) + (c[2][0] - c[3][0])) / 2);
-    const cx = (c[0][0] + c[1][0] + c[2][0] + c[3][0]) / 4;
-    return { s, w, cx };
-  }).sort((a, b) => a.cx - b.cx);
-  const total = info.reduce((n, i) => n + i.w, 0) || 1;
-  let x = 0;
-  for (const it of info) {
-    const w = it.w / total;
-    it.s.src = { x, y: 0, w, h: 1 };
-    x += w;
-  }
-  pushProject(true);
-  buildInspector();
-  toast('Video spread across ' + info.length + ' surfaces by width. Fine-tune each surface\'s region of the picture.');
-}
-
-function helpSection() {
-  return section('Keys', [el('div', {
-    class: 'hint', html: `
-      <b>V</b> select &nbsp; <b>S</b> new surface &nbsp; <b>M</b> shape (rectangle) &nbsp; <b>P</b> shape (draw)<br>
-      <b>Space</b> play/pause &nbsp; <b>B</b> blackout &nbsp; <b>G</b> wall guides<br>
-      <b>Arrows</b> nudge 1px, <b>Shift</b> 10px &nbsp; <b>Backspace</b> delete<br>
-      <b>Cmd+scroll</b> zoom &nbsp; <b>Alt+drag</b> pan &nbsp; <b>Cmd+drag</b> ignore snapping<br>
-      <b>Shift+drag</b> constrain to one axis &nbsp; <b>Double-click</b> edge adds a point`,
-  })]);
-}
 
 // ------------------------------------------------------------------- modal --
 function promptModal(label, value) {
@@ -1950,7 +1147,7 @@ api.onDisplays((d) => { displays = d; buildInspector(); stage.layout(); });
 function refreshMappings(rebuild = true) {
   return api.mappings().then((m) => {
     mappings = m;
-    if (document.activeElement?.id !== 'mapName') mappingName = m.current || mappingName;
+    setup.syncMappingName(m.current);
     if (rebuild && S) buildInspector();
   }).catch(() => {});
 }
@@ -1970,71 +1167,6 @@ window.__dev = {
 };
 
 // ------------------------------------------------------------ visuals view --
-// The catalogue of scenes: a card per scene with its captured frame. Hovering
-// a card renders that scene live, small, to the current music, so you can
-// audition one without taking it to the wall. Built once; frame() keeps the
-// badges and the hovered card current.
-const visualsBrowser = (() => {
-  const root = $('#visBrowser');
-  const cards = new Map();
-  let hover = null;              // scene id under the pointer
-  let gl = null, live = null, glc = null;
-  const W = 384, H = 216;
-  const ensureLive = () => {
-    if (gl) return !!live;
-    glc = document.createElement('canvas'); glc.width = W; glc.height = H;
-    gl = glc.getContext('webgl2', { antialias: false });
-    if (!gl) return false;
-    try { live = new Visuals(gl); } catch (e) { console.error('[visuals preview]', e); live = null; }
-    return !!live;
-  };
-  const card = (id, label, hint) => {
-    const cv = el('canvas', { class: 'visLive', width: W, height: H });
-    const img = id === 'auto' ? el('div', { class: 'fxNoThumb', text: '\u2728' })
-      : el('img', { src: '/renderer/control/visual-thumbs/' + id + '.jpg', alt: label, loading: 'lazy' });
-    const c = el('button', { class: 'fxCard visScene', title: label }, [
-      el('div', { class: 'fxThumb' }, [img, cv, el('span', { class: 'fxBadge now', text: 'on the wall' }), el('span', { class: 'fxBadge sel', text: id === 'auto' ? 'mixing' : 'held' })]),
-      el('div', { class: 'fxCardBody' }, [el('div', { class: 'fxCardName', text: label }), hint ? el('div', { class: 'fxCardHint', text: hint }) : null]),
-    ]);
-    c.onclick = () => { patchVisualsCfg({ scene: id }); toast(id === 'auto' ? 'Mixing every scene' : 'Holding ' + label); };
-    c.onmouseenter = () => { if (id !== 'auto') hover = id; };
-    c.onmouseleave = () => { if (hover === id) { hover = null; cv.classList.remove('on'); } };
-    cards.set(id, { el: c, cv });
-    return c;
-  };
-  root.innerHTML = '';
-  root.appendChild(el('div', { class: 'fxGroupHead' }, [
-    el('h2', { text: 'Visuals' }),
-    help('Generated scenes that take the place of the picture and move with the sound. Click one to hold it; Mix walks through them all, changing every few seconds. Hover a card to see it live to the music that is playing. Whether they show at all is the Video / Visuals choice in the top bar.'),
-    el('span', { class: 'count', text: VISUAL_SCENES.length + ' scenes' }),
-  ]));
-  const grid = el('div', { class: 'fxGrid' });
-  grid.appendChild(card('auto', 'Mix', 'Every scene in turn, in a shuffled order, with a cross-fade between them.'));
-  for (const [id, label] of VISUAL_SCENES) grid.appendChild(card(id, label, VISUAL_SCENE_HINTS[id]));
-  root.appendChild(grid);
-
-  const frame = () => {
-    if (!S || currentView !== 'visuals') return;
-    const sel = visualsCfg().scene, sc = visualsOn(S) ? visualsHost.scene : null;
-    for (const [id, c] of cards) {
-      c.el.classList.toggle('on', id === sel);
-      c.el.classList.toggle('now', !!sc && id === sc);
-    }
-    if (!hover || !ensureLive()) return;
-    const c = cards.get(hover);
-    const r = live.render({ w: W, h: H, time: targetTime(S.transport), audio: fxHost.features(), cfg: { ...visualsCfg(), scene: hover },
-      key: S.transport.source && S.transport.source.key, playing: !!S.transport.playing });
-    if (live.error) return;
-    // the scene is in a texture, row 0 at the top; the canvas wants it the other way up
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, live.target.fbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.blitFramebuffer(0, 0, r.w, r.h, 0, H, W, 0, gl.COLOR_BUFFER_BIT, gl.LINEAR);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    c.cv.getContext('2d').drawImage(glc, 0, 0);
-    c.cv.classList.add('on');
-  };
-  return { frame };
-})();
 
 // ------------------------------------------------------------------- sound --
 // The beat meter in the top bar shows what the analyser hears right now, from
@@ -2220,7 +1352,7 @@ function frame() {
       if (!scrubbing && t.duration) $('#scrub').value = Math.round((now / t.duration) * 1000);
     }
     if (camera.live && camera.homography) camera.applyWarp();
-    if (srcMapWidget.redraw && stage.sel?.type === 'surface') srcMapWidget.redraw();
+    if (stage.sel?.type === 'surface') mapInspector.redrawSrcMap();
     for (const g of Object.values(GROUPS)) if (!g.dirty) for (const f of g.fr) { try { f(); } catch {} }
   }
   requestAnimationFrame(frame);
