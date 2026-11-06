@@ -267,6 +267,9 @@ export class Engine {
     this.sourceSize = [1, 1];
     this.fx = null;                 // optional FxSystem, set by the renderer
     this.generator = null;          // optional generated picture in place of the video
+    this.fallback = null;           // a still (an <img>) for when there is no picture to map
+    this.fallbackTex = null;
+    this._fallbackUp = false;
     this.surfaceGenerator = null;   // optional: (surface, W, H) -> { tex, w, h } for surfaces that run their own visuals
     this._colourTex = new Map();    // flat-colour surfaces: hex -> 1x1 texture
     this._mode = 'mapped';
@@ -338,7 +341,41 @@ export class Engine {
     this.generator = fn || null;
   }
 
-  // The picture to map this frame: the generated one, or the latest video frame.
+  /**
+   * A still to map whenever there is no picture: nothing playing, or a video
+   * that has not decoded a frame yet. null goes back to black.
+   */
+  setFallback(img) {
+    if (img === this.fallback) return;
+    this.fallback = img || null;
+    this._fallbackUp = false;
+  }
+
+  _fallbackPicture() {
+    const img = this.fallback;
+    const w = img ? (img.naturalWidth || img.width || 0) : 0;
+    const h = img ? (img.naturalHeight || img.height || 0) : 0;
+    if (!w || !h) return null;
+    const gl = this.gl;
+    if (!this.fallbackTex) {
+      this.fallbackTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.fallbackTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    if (!this._fallbackUp) {
+      gl.bindTexture(gl.TEXTURE_2D, this.fallbackTex);
+      try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); } catch (e) { return null; }
+      this._fallbackUp = true;
+    }
+    this.sourceSize = [w, h];
+    return { ok: true, tex: this.fallbackTex, prev: this.fallbackTex, crop: [0, 0, 1, 1], blend: 1 };
+  }
+
+  // The picture to map this frame: the generated one, the latest video frame,
+  // or the fallback still when there is no frame.
   _picture(blendOpt, smoothMotion) {
     if (this.generator) {
       const g = this.generator(this.canvas.width, this.canvas.height, this._mode);
@@ -348,6 +385,10 @@ export class Engine {
       }
     }
     const ok = this._uploadSource();
+    if (!ok) {
+      const fb = this._fallbackPicture();
+      if (fb) return fb;
+    }
     const blend = blendOpt != null ? blendOpt : this._blendFactor(smoothMotion);
     return { ok, tex: this.srcTex, prev: this.prevTex, crop: this.crop, blend };
   }

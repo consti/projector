@@ -147,11 +147,12 @@ set* brings every effect back with a check box per card, so you can still browse
 everything while you choose; *All effects* switches the set off. Sets are saved
 with the app's settings.
 
-The thumbnails and clips are captured from the running app with
-`node scripts/fx-thumbs.mjs` (start the app with `--remote-debugging-port=9222`
-and a video playing; `--no-clips` skips the recordings); rerun it after adding
-or changing an effect, then `node scripts/readme-gallery.mjs` to refresh the
-gallery below.
+The thumbnails are captured from the running app with
+`node scripts/fx-thumbs.mjs --no-clips` (start the app with
+`--remote-debugging-port=9222` and nothing playing, so every card is shot over
+the same default picture; without `--no-clips` it also records the hover
+clips); rerun it after adding or changing an effect, then
+`node scripts/readme-gallery.mjs` to refresh the gallery below.
 
 | | |
 | --- | --- |
@@ -944,6 +945,16 @@ covered rather than with time, so the legs never skate; dance frames advance
 with the beat. Sprites are uploaded premultiplied and mipmapped, which is what
 removes the dark fringe and the shimmer around them.
 
+## The default picture
+
+With nothing playing, every wall shows the same still instead of black: the
+three toys on a glossy studio floor under a spotlight,
+`assets/default-picture.jpg`. It is rendered in software from the models by
+`node scripts/default-picture.mjs`, so it changes when they do. The engine maps
+it exactly as it would a video frame until one arrives, the hover previews in
+the Effects catalogue run over it when no video is playing, and the catalogue
+thumbnails are all shot over it, so the cards look alike.
+
 ## The toys
 
 Three figurines from the coffee table — a woolly alpaca, a leopard with
@@ -1057,6 +1068,10 @@ scripts/fx-thumbs.mjs    capture the effect thumbnails and hover clips from the 
 scripts/build-models.mjs the toy figurines: signed-distance parts -> surface nets -> .glb with colors, occlusion and a rig
 scripts/models/          the three figurines as code (alpaca, leopard, sumo) and the SDF toolkit
 scripts/render-model.mjs a turnaround of a built model to tmp/renders/, no app needed
+scripts/default-picture.mjs the still every wall shows when nothing plays: the toys, rendered in software
+scripts/models/raster.mjs  the software rasteriser behind the turnarounds and the default picture
+assets/default-picture.jpg the default picture
+src/shared/default-picture.mjs the shared <img> of it, for every window's engine
 assets/models/           the built alpaca.glb, leopard.glb and sumo.glb
 
 src/shared/fx/system.mjs     the effect stack: layers, clock, compositing, bloom

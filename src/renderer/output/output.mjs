@@ -1,4 +1,5 @@
 import { Engine } from '/shared/gl-engine.mjs';
+import { defaultPicture } from '/shared/default-picture.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
 import { drawGuides } from '/shared/guides.mjs';
@@ -14,6 +15,7 @@ const ident = document.getElementById('ident');
 const msgEl = document.getElementById('msg');
 
 const engine = new Engine(canvas);
+engine.setFallback(defaultPicture());
 const player = new Player();
 const fx = new FxHost(engine, role);
 const visuals = new VisualsHost(engine);

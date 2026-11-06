@@ -1,4 +1,5 @@
 import { Stage } from '/renderer/control/stage.mjs';
+import { defaultPicture } from '/shared/default-picture.mjs';
 import { CameraPanel } from '/renderer/control/camera.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
@@ -133,11 +134,17 @@ const visualsHost = new VisualsHost(stage.engine);
 const surfaceVisuals = new SurfaceVisuals(stage.engine.gl);
 stage.engine.surfaceGenerator = (sf, W, H) => surfaceVisuals.render(sf, W, H);
 // hovering a catalogue card runs that effect live over the current picture
+stage.engine.setFallback(defaultPicture());
 const audition = new FxAudition({
   project: () => project,
   // the plain picture: the video (or test pattern); when visuals have replaced
-  // it, the stage's own canvas, which was just drawn this frame
-  source: () => { const src = previewSource(); if (sourceReady(src) && !visualsOn(S)) return src; return stage.glc.width ? stage.glc : null; },
+  // it, the stage's own canvas, which was just drawn this frame; with nothing
+  // playing, the still the wall shows
+  source: () => {
+    const src = previewSource();
+    if (visualsOn(S)) return stage.glc.width ? stage.glc : null;
+    return sourceReady(src) ? src : defaultPicture();
+  },
   crop: () => (S && S.transport.source && !visualsOn(S) ? S.transport.source.crop : null),
   audio: () => fxHost.features(),
   characters: () => activeCharacters(S),

@@ -533,8 +533,10 @@ function soundLinks(ui, fx, sel, spec) {
 // thumbnail, searchable and filtered by group, with the scenes along the top.
 // Built once; only the "in the stack" badges refresh on later rebuilds.
 
-export const thumbUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.jpg';
-export const clipUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.webm';
+// stamped per launch, so a recaptured thumbnail is not served from the cache
+const STAMP = '?' + Date.now().toString(36);
+export const thumbUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.jpg' + STAMP;
+export const clipUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.webm' + STAMP;
 
 // Hovering a card auditions the effect: it runs live, small, over the picture
 // that is playing, to the music that is playing (see audition.mjs). Where that
