@@ -28,7 +28,7 @@ function seg(x, y, ax, ay, bx, by) {
 
 // the wool is one smooth mass before the curls go on, so the curls run over the joins
 const wool = fluffy(sunion(0.14,
-  ellipsoid([0, 0.35, -0.08], [0.27, 0.32, 0.33]),
+  ellipsoid([0, 0.34, -0.14], [0.27, 0.32, 0.42]),
   capsule([0, 0.36, 0.05], [0, 0.7, 0.09], 0.21),
   ellipsoid([0, 0.82, 0.1], [0.22, 0.2, 0.21]),
 ));
@@ -48,12 +48,12 @@ const parts = [
   { name: 'earR', sdf: rotate(ellipsoid([0.1, 1.04, 0.02], [0.038, 0.075, 0.028]), [0.1, 0.98, 0.02], 'z', -18), color: EAR, bone: 'earR', k: 0.02 },
   { name: 'legFL', sdf: leg(-0.11, 0.14), color: WOOL, bone: 'legL', k: 0.03 },
   { name: 'legFR', sdf: leg(0.11, 0.14), color: WOOL, bone: 'legR', k: 0.03 },
-  { name: 'legBL', sdf: leg(-0.12, -0.24), color: WOOL, bone: 'body', k: 0.03 },
-  { name: 'legBR', sdf: leg(0.12, -0.24), color: WOOL, bone: 'body', k: 0.03 },
+  { name: 'legBL', sdf: leg(-0.12, -0.38), color: WOOL, bone: 'body', k: 0.03 },
+  { name: 'legBR', sdf: leg(0.12, -0.38), color: WOOL, bone: 'body', k: 0.03 },
   { name: 'hoofFL', sdf: hoof(-0.11, 0.14), color: HOOF, bone: 'legL', k: 0.008 },
   { name: 'hoofFR', sdf: hoof(0.11, 0.14), color: HOOF, bone: 'legR', k: 0.008 },
-  { name: 'hoofBL', sdf: hoof(-0.12, -0.24), color: HOOF, bone: 'body', k: 0.008 },
-  { name: 'hoofBR', sdf: hoof(0.12, -0.24), color: HOOF, bone: 'body', k: 0.008 },
+  { name: 'hoofBL', sdf: hoof(-0.12, -0.38), color: HOOF, bone: 'body', k: 0.008 },
+  { name: 'hoofBR', sdf: hoof(0.12, -0.38), color: HOOF, bone: 'body', k: 0.008 },
 ];
 
 function paint(p, n, col, part) {
@@ -71,7 +71,7 @@ export const alpaca = {
   name: 'alpaca',
   height: 1.08,
   footprint: 0.6,
-  bounds: [[-0.4, -0.02, -0.5], [0.4, 1.14, 0.45]],
+  bounds: [[-0.4, -0.02, -0.64], [0.4, 1.14, 0.45]],
   bones: { head: [0, 0.66, 0.08], legL: [-0.11, 0.25, 0.14], legR: [0.11, 0.25, 0.14], earL: [-0.1, 0.95, 0.02], earR: [0.1, 0.95, 0.02] },
   skinBlend: 0.1,
   aoStep: 0.025,
