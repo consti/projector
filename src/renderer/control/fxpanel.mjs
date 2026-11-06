@@ -180,7 +180,6 @@ export function buildFxSection(ui) {
   // ---------------------------------------------------------- master row
   rows.push(el('div', { class: 'row' }, [
     ui.toggle('Effects on', () => fx.enabled, (v) => { fx.enabled = v; }),
-    ui.toggle('In preview', () => fx.preview !== false, (v) => { fx.preview = v; }),
   ]));
   if (ui.ai) {
     const a = ui.ai;
@@ -192,13 +191,10 @@ export function buildFxSection(ui) {
     if (!ready) rows.push(el('div', { class: 'hint', text: 'Turn AI on in Setup (and give it a key) to let the director steer.' }));
     else if (a.log.length && a.log[0].kind === 'plan') rows.push(el('div', { class: 'hint', text: 'AI: ' + a.log[0].text.split(' — ')[0] }));
   }
-  rows.push(el('div', { class: 'hint', text: 'The stack runs on both walls: the projector (with your shapes) and the TV (plain video, no shapes). Each layer below can be limited to one of them.' }));
+  rows.push(el('div', { class: 'hint', text: 'The stack runs on both walls; each layer can be limited to one of them. Cmd-click a layer to solo it (and again to bring the others back); Cmd-click a card in the catalogue to make it the only effect.' }));
   if (!fx.enabled) {
     rows.push(el('div', { class: 'hint', text: 'Physics and simulation layers drawn over the mapped video, in projector space. Everything collides with the shapes you have masked.' }));
   }
-
-  rows.push(ui.selectRow('Quality', Object.keys(QUALITY).map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
-    () => fx.quality || 'high', (v) => { fx.quality = v; }));
 
   // ---------------------------------------------------------- layer stack
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px' });
@@ -225,7 +221,18 @@ export function buildFxSection(ui) {
       el('span', { class: 'ar', text: '✕', title: 'Remove',
         onclick: (e) => { e.stopPropagation(); layers.splice(i, 1); ui.selectLayer(null); ui.push(true); ui.rebuild(); } }),
     ]);
-    row.onclick = () => { ui.selectLayer(on ? null : L.id); ui.rebuild(); };
+    row.title = 'Click to edit · Cmd-click to solo';
+    row.onclick = (e) => {
+      if (e.metaKey) {
+        // solo: only this layer on; a second Cmd-click brings the others back
+        const soloed = L.enabled !== false && layers.every((x) => x === L || x.enabled === false);
+        for (const x of layers) x.enabled = soloed ? true : x === L;
+        ui.selectLayer(L.id); ui.push(true); ui.rebuild();
+        ui.toast(soloed ? 'All layers back on' : 'Only ' + (L.name || (spec ? spec.label : L.type)), 1200);
+        return;
+      }
+      ui.selectLayer(on ? null : L.id); ui.rebuild();
+    };
     list.appendChild(row);
   });
   rows.push(list);
@@ -303,42 +310,51 @@ export function buildFxSection(ui) {
 }
 
 
-// World, camera, look and sound: the right-hand dock under the preview.
+// World, interaction, look and sound: the side column under the preview.
 export function buildFxWorldSections(ui) {
   const P = ui.project();
   const fx = P.fx;
   const el = ui.el;
-  const world = [], cam = [], look = [];
+  const world = [], inter = [], look = [];
+
+  // --- world: the physics every simulation layer lives in
   world.push(ui.slider('Gravity', () => fx.gravity, (v) => (fx.gravity = v), { min: -2, max: 4, fmt: (v) => v.toFixed(2) }));
   world.push(ui.slider('Wind', () => fx.windX, (v) => (fx.windX = v), { min: -2, max: 2, fmt: (v) => v.toFixed(2) }));
   world.push(ui.slider('Time scale', () => fx.timeScale, (v) => (fx.timeScale = v), { min: 0, max: 3, fmt: (v) => v.toFixed(2) + 'x' }));
   world.push(el('div', { class: 'row' }, [
-    ui.toggle('Masks are solid', () => fx.collideMasks !== false, (v) => (fx.collideMasks = v)),
-    ui.toggle('Area edges solid', () => !!fx.collideSurfaceEdges, (v) => (fx.collideSurfaceEdges = v)),
+    ui.toggle('Pause with the video', () => !!fx.pauseWithVideo, (v) => (fx.pauseWithVideo = v)),
+  ]));
+  world.push(el('div', { class: 'fxhead', text: 'Solid' }));
+  world.push(el('div', { class: 'row' }, [
+    ui.toggle('Shapes', () => fx.collideMasks !== false, (v) => (fx.collideMasks = v), { title: 'The shapes you masked are solid: balls land on them, water flows round them' }),
+    ui.toggle('Surface edges', () => !!fx.collideSurfaceEdges, (v) => (fx.collideSurfaceEdges = v), { title: 'The edges of every surface are walls too' }),
   ]));
   const walls = fx.walls || (fx.walls = { l: true, r: true, t: false, b: true });
   world.push(el('div', { class: 'row' }, [
-    el('span', { class: 'hint', text: 'Walls' }),
     ui.toggle('Floor', () => walls.b, (v) => (walls.b = v)),
     ui.toggle('Ceiling', () => walls.t, (v) => (walls.t = v)),
     ui.toggle('Sides', () => walls.l && walls.r, (v) => { walls.l = v; walls.r = v; }),
   ]));
-  world.push(el('div', { class: 'row' }, [
-    ui.toggle('Pointer interacts', () => fx.interact.pointer !== false, (v) => (fx.interact.pointer = v)),
-    ui.toggle('Pause with video', () => !!fx.pauseWithVideo, (v) => (fx.pauseWithVideo = v)),
-  ]));
-  world.push(ui.slider('Pointer reach', () => fx.interact.radius, (v) => (fx.interact.radius = v), { min: 0.01, max: 0.4, fmt: (v) => v.toFixed(2) }));
+  world.push(el('div', { class: 'hint', text: 'Which edges of the picture hold things in. With no floor, whatever falls leaves the wall.' }));
 
-  // camera
-  cam.push(el('div', { class: 'row' }, [
-    ui.toggle('People push things', () => !!fx.interact.camera, (v) => (fx.interact.camera = v)),
+  // --- interaction: everything that pushes the simulation from outside
+  inter.push(el('div', { class: 'fxhead', text: 'Pointer' }));
+  inter.push(el('div', { class: 'row' }, [
+    ui.toggle('Pointer pushes things', () => fx.interact.pointer !== false, (v) => (fx.interact.pointer = v), { title: 'The mouse over the preview is a hand in front of the wall' }),
+  ]));
+  inter.push(ui.slider('Reach', () => fx.interact.radius, (v) => (fx.interact.radius = v), { min: 0.01, max: 0.4, fmt: (v) => v.toFixed(2) }));
+  inter.push(ui.slider('Strength', () => fx.interact.strength == null ? 1 : fx.interact.strength, (v) => (fx.interact.strength = v), { min: 0, max: 4, fmt: (v) => v.toFixed(2) }));
+
+  inter.push(el('div', { class: 'fxhead', text: 'People in front of the wall' }));
+  inter.push(el('div', { class: 'row' }, [
+    ui.toggle('People push things', () => !!fx.interact.camera, (v) => (fx.interact.camera = v), { title: 'Movement seen by an aligned camera (Mac or phone) pushes the simulation' }),
     ui.toggle('Show tracking', () => !!fx.interact.cameraDebug, (v) => (fx.interact.cameraDebug = v)),
   ]));
-  cam.push(ui.slider('Sensitivity', () => fx.interact.cameraSensitivity,
+  inter.push(ui.slider('Sensitivity', () => fx.interact.cameraSensitivity,
     (v) => (fx.interact.cameraSensitivity = v), { min: 0.2, max: 4, fmt: (v) => v.toFixed(2) }));
-  cam.push(ui.slider('Push strength', () => fx.interact.cameraForce,
+  inter.push(ui.slider('Push', () => fx.interact.cameraForce,
     (v) => (fx.interact.cameraForce = v), { min: 0, max: 4, fmt: (v) => v.toFixed(2) }));
-  cam.push(ui.selectRow('Phone pushes with', PART_OPTIONS, () => fx.interact.phoneParts || 'body',
+  inter.push(ui.selectRow('Phone pushes with', PART_OPTIONS, () => fx.interact.phoneParts || 'body',
     (v) => { fx.interact.phoneParts = v; ui.push(true); }));
   const camState = el('div', { class: 'hint' });
   ui.live(() => {
@@ -353,25 +369,33 @@ export function buildFxWorldSections(ui) {
     } else if (r || ph.ready) {
       txt = (r && ph.ready ? 'Camera and phone are' : r ? 'Camera is' : 'Phone is') + ' aligned and ready.';
     } else {
-      txt = 'Align a camera first: pick a Mac camera and press "Align to wall", or share on Wi-Fi and align a phone (both in the left panel). The alignment tells the tracker where in the picture each person is.';
+      txt = 'Align a camera first (Setup: a Mac camera and "Align to wall", or share on Wi-Fi and align a phone). The alignment tells the tracker where in the picture each person is.';
     }
     camState.textContent = txt;
     camState.style.color = r || ph.ready ? '' : 'var(--dim2)';
   });
-  cam.push(camState);
+  inter.push(camState);
 
-  // look
+  inter.push(el('div', { class: 'fxhead', text: 'Phones' }));
+  inter.push(el('div', { class: 'row' }, [
+    ui.toggle('Fingers push things', () => ui.settings().phoneTouch !== false, (v) => ui.patchSettings({ phoneTouch: v }),
+      { push: false, title: 'Fingers on a phone\u2019s live picture push the effects, like hands in front of the wall' }),
+  ]));
+  inter.push(el('div', { class: 'hint', text: 'What a phone may do with the pixel people is under Setup \u2192 Phone.' }));
+
+  // --- look
   look.push(ui.slider('Bloom', () => fx.bloom, (v) => (fx.bloom = v), { min: 0, max: 2 }));
   look.push(ui.slider('Bloom threshold', () => fx.bloomThreshold, (v) => (fx.bloomThreshold = v), { min: 0.2, max: 2 }));
   look.push(ui.slider('Exposure', () => fx.exposure, (v) => (fx.exposure = v), { min: 0.2, max: 3 }));
-  look.push(ui.toggle('Filmic tonemap', () => fx.tonemap !== false, (v) => (fx.tonemap = v)));
-
+  look.push(el('div', { class: 'row' }, [ui.toggle('Filmic tonemap', () => fx.tonemap !== false, (v) => (fx.tonemap = v))]));
+  look.push(ui.selectRow('Quality', Object.keys(QUALITY).map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
+    () => fx.quality || 'high', (v) => { fx.quality = v; ui.push(true); }));
 
   return [
-    ui.section('World', world),
-    ui.section('Camera interaction', cam),
-    ui.section('Effects look', look),
     ui.section('Sound', soundSection(ui, fx)),
+    ui.section('World', world),
+    ui.section('Interaction', inter),
+    ui.section('Effects look', look),
   ];
 }
 
@@ -405,9 +429,8 @@ function soundSection(ui, fx) {
   const el = ui.el;
   const a = fx.audio;
   const rows = [];
-  rows.push(el('div', { class: 'fxhead', text: 'Sound' }));
   rows.push(el('div', { class: 'row' }, [
-    ui.toggle('React to sound', () => !!a.enabled, (v) => (a.enabled = v)),
+    ui.toggle('React to sound', () => !!a.enabled, (v) => (a.enabled = v), { title: 'Let the layers act on the music: links and beat triggers are set per layer' }),
   ]));
 
   // live meter
@@ -430,12 +453,15 @@ function soundSection(ui, fx) {
     readout.style.color = a.enabled && !f.live ? 'var(--warn)' : '';
   });
 
+  rows.push(el('div', { class: 'fxhead', text: 'Analyser' }));
   rows.push(ui.slider('Sensitivity', () => a.sensitivity, (v) => (a.sensitivity = v), { min: 0.2, max: 5, fmt: (v) => v.toFixed(2) }));
+  rows.push(ui.slider('Beat', () => a.beatThreshold, (v) => (a.beatThreshold = v), { min: 0.4, max: 4, fmt: (v) => v.toFixed(2) }));
+  rows.push(el('div', { class: 'hint', text: 'Lower Beat to catch softer beats; raise it if every hi-hat fires.' }));
   rows.push(ui.slider('Attack', () => a.attack, (v) => (a.attack = v), { min: 0.002, max: 0.3, step: 0.002, fmt: (v) => Math.round(v * 1000) + 'ms' }));
   rows.push(ui.slider('Release', () => a.release, (v) => (a.release = v), { min: 0.02, max: 1.2, step: 0.01, fmt: (v) => Math.round(v * 1000) + 'ms' }));
-  rows.push(ui.slider('Beat sensitivity', () => a.beatThreshold, (v) => (a.beatThreshold = v), { min: 0.4, max: 4, fmt: (v) => v.toFixed(2) }));
 
-  rows.push(el('div', { class: 'hint', text: 'Sound also drives the world. Amounts are relative: +1 doubles the value at full level.' }));
+  rows.push(el('div', { class: 'fxhead', text: 'Sound drives the world' }));
+  rows.push(el('div', { class: 'hint', text: 'Amounts are relative: +1 doubles the value at full level.' }));
   rows.push(ui.selectRow('Driven by', SOURCES.filter((o) => o[0] !== 'none'),
     () => a.globalSrc || 'level', (v) => (a.globalSrc = v)));
   for (const [k, label] of [['gravity', 'Gravity'], ['timeScale', 'Speed'], ['wind', 'Wind'], ['bloom', 'Bloom'], ['exposure', 'Exposure']]) {
@@ -510,27 +536,40 @@ function soundLinks(ui, fx, sel, spec) {
 export const thumbUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.jpg';
 export const clipUrl = (type) => '/renderer/control/fx-thumbs/' + type + '.webm';
 
-// A card shows its captured still; hovering it plays the recorded clip of the
-// effect in motion (scripts/fx-thumbs.mjs records both). Clips that do not
-// exist fail quietly and the still stays.
+// Hovering a card auditions the effect: it runs live, small, over the picture
+// that is playing, to the music that is playing (see audition.mjs). Where that
+// is not possible — no WebGL2, or the effect fails — the recorded clip that
+// scripts/fx-thumbs.mjs captured plays instead, and a card with neither keeps
+// its still.
 const noClip = new Set();
-function hoverClip(thumbEl, type) {
-  let vid = null, timer = null;
-  const start = () => {
-    if (vid || noClip.has(type)) return;
+function hoverPreview(ui, thumbEl, type, build) {
+  let vid = null, timer = null, over = false;
+  const startClip = () => {
+    if (!over || vid || noClip.has(type)) return;
     vid = document.createElement('video');
     vid.className = 'fxClip'; vid.muted = true; vid.loop = true; vid.playsInline = true; vid.autoplay = true;
     vid.src = clipUrl(type);
-    vid.onerror = () => { noClip.add(type); stop(); };
+    vid.onerror = () => { noClip.add(type); stopClip(); };
     vid.oncanplay = () => vid.classList.add('on');
     thumbEl.appendChild(vid);
     vid.play().catch(() => {});
   };
-  const stop = () => {
-    clearTimeout(timer); timer = null;
+  const stopClip = () => {
     if (vid) { try { vid.pause(); vid.removeAttribute('src'); vid.load(); } catch {} vid.remove(); vid = null; }
   };
-  thumbEl.addEventListener('pointerenter', () => { clearTimeout(timer); timer = setTimeout(start, 120); });
+  const start = () => {
+    timer = null;
+    if (!over) return;
+    const live = ui.audition && ui.audition.start(thumbEl, build, startClip);
+    if (!live) startClip();
+  };
+  const stop = () => {
+    over = false;
+    clearTimeout(timer); timer = null;
+    if (ui.audition && ui.audition.thumb === thumbEl) ui.audition.stop();
+    stopClip();
+  };
+  thumbEl.addEventListener('pointerenter', () => { over = true; clearTimeout(timer); timer = setTimeout(start, 120); });
   thumbEl.addEventListener('pointerleave', stop);
 }
 
@@ -609,22 +648,24 @@ export function buildFxBrowser(ui) {
       }
     }
   };
-  root.appendChild(el('div', { class: 'fxTools' }, [search, chips, setsBar]));
+  root.appendChild(el('div', { class: 'fxTools' }, [search, chips, setsBar,
+    el('span', { class: 'hint fxHoverHint', text: 'Hover a card: the effect runs live over the picture that is playing. Click to add it.' })]));
 
   const body = el('div', { class: 'fxBody' });
   root.appendChild(body);
 
   const inStack = (type) => (ui.project().fx.layers || []).filter((L) => L.type === type).length;
 
-  const addLayer = (type) => {
+  const addLayer = (type, only) => {
     const fx = ui.project().fx;
     const L = defaultFxLayer(type);
-    (fx.layers || (fx.layers = [])).push(L);
+    if (only) fx.layers = [L];
+    else (fx.layers || (fx.layers = [])).push(L);
     fx.enabled = true;
     ui.selectLayer(L.id);
     ui.push(true);
     ui.rebuild();
-    ui.toast('Added ' + (REGISTRY.get(type)?.label || type));
+    ui.toast((only ? 'Only ' : 'Added ') + (REGISTRY.get(type)?.label || type));
   };
 
   const toggleInSet = (type, on) => {
@@ -655,15 +696,15 @@ export function buildFxBrowser(ui) {
       kids.push(pick);
     }
     const thumb = el('div', { class: 'fxThumb' }, kids);
-    hoverClip(thumb, e.type);
-    const c = el('button', { class: 'fxCard' + (cur && browserState.editing && !inSet ? ' dim' : ''), title: 'Add ' + e.label, 'data-type': e.type }, [
+    hoverPreview(ui, thumb, e.type, (fx) => { fx.layers = [defaultFxLayer(e.type)]; });
+    const c = el('button', { class: 'fxCard' + (cur && browserState.editing && !inSet ? ' dim' : ''), title: 'Add ' + e.label + ' · Cmd-click: only this effect', 'data-type': e.type }, [
       thumb,
       el('div', { class: 'fxCardBody' }, [
         el('div', { class: 'fxCardName', text: e.label }),
         el('div', { class: 'fxCardHint', text: e.hint || '' }),
       ]),
     ]);
-    c.onclick = () => addLayer(e.type);
+    c.onclick = (ev) => addLayer(e.type, ev.metaKey);
     return c;
   };
 
@@ -673,7 +714,7 @@ export function buildFxBrowser(ui) {
     img.onerror = () => { img.replaceWith(el('div', { class: 'fxNoThumb', text: s.name[0] })); };
     const tags = el('div', { class: 'fxTags' }, s.layers.map(([t]) => el('span', { class: 'tag', text: REGISTRY.get(t)?.label || t })));
     const sthumb = el('div', { class: 'fxThumb' }, [img, s.audio ? el('span', { class: 'fxBadge on', text: '♪ reacts to sound' }) : null]);
-    hoverClip(sthumb, first);
+    hoverPreview(ui, sthumb, first, (fx) => { applyScene(fx, s); });
     const c = el('button', { class: 'fxCard scene', title: s.note || s.name }, [
       sthumb,
       el('div', { class: 'fxCardBody' }, [

@@ -475,7 +475,7 @@ export class Stage {
 
   _addMask(points) {
     const p = this.hooks.project();
-    const m = defaultMask({ name: 'Mask ' + (p.masks.length + 1), points: points.map((q) => [...q]) });
+    const m = defaultMask({ name: 'Shape ' + (p.masks.length + 1), points: points.map((q) => [...q]) });
     p.masks.push(m);
     this.select('mask', m.id);
     this._changed(true);

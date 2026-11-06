@@ -2,9 +2,11 @@ import { Engine } from '/shared/gl-engine.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
 import { drawGuides } from '/shared/guides.mjs';
-import { defaultProject, activeCharacters } from '/shared/schema.mjs';
+import { defaultProject, activeCharacters, wallProject, ensureProject } from '/shared/schema.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
 import { VisualsHost, visualsOn } from '/shared/visuals.mjs';
+import { SurfaceVisuals } from '/shared/surface-visuals.mjs';
+import { visualsCfgFor } from '/shared/visuals-cfg.mjs';
 
 const role = new URLSearchParams(location.search).get('role') || 'projector';
 const canvas = document.getElementById('c');
@@ -15,6 +17,8 @@ const engine = new Engine(canvas);
 const player = new Player();
 const fx = new FxHost(engine, role);
 const visuals = new VisualsHost(engine);
+const surfaceVisuals = new SurfaceVisuals(engine.gl);
+engine.surfaceGenerator = (s, W, H) => surfaceVisuals.render(s, W, H);
 
 let state = { project: defaultProject(), transport: {}, settings: {}, outputs: {} };
 let patternCanvas = null, patternKind = 'off';
@@ -78,6 +82,7 @@ setTimeout(() => hint.classList.add('gone'), 4000);
 
 function apply(s) {
   state = s;
+  if (state.project) ensureProject(state.project);
   const src = s.transport.source;
   player.setSource(src && src.kind !== 'music' ? src : null);   // an Apple Music song plays in the Music app
 }
@@ -86,9 +91,13 @@ let lastAudioSend = 0;
 
 function frame() {
   resize();
-  const p = state.project || defaultProject();
+  // this wall's map: the project with that map's surfaces and shapes, or the
+  // plain full-screen picture when the output shows no map
+  const wall = wallProject(state.project || defaultProject(), state.outputs, role);
+  const p = wall.project;
   const g = p.global || {};
-  const cfg = (state.outputs && state.outputs[role]) || { mode: role === 'tv' ? 'fill' : 'mapped' };
+  const cfg = (state.outputs && state.outputs[role]) || {};
+  const mapped = wall.mapped;
 
   // source: calibration pattern overrides the video (and the visuals)
   const pattern = !!(g.testPattern && g.testPattern !== 'off');
@@ -109,7 +118,7 @@ function frame() {
   }
 
   // guides overlay (projector-space outlines) – rebuilt only when it changes
-  if (cfg.mode === 'mapped' && g.showGuides) {
+  if (mapped && g.showGuides) {
     const key = JSON.stringify([p.surfaces.map((s) => [s.mesh, s.name, s.enabled]), p.masks.map((m) => [m.points, m.invert, m.enabled]), canvas.width, canvas.height]);
     if (key !== guidesKey) {
       guidesKey = key;
@@ -126,32 +135,33 @@ function frame() {
   const ownsAudio = state.audioOut === role;
   // The TV is its own wall: plain video with the effects running over it (no
   // shapes in that world, and its own aspect), unless its effects are off.
-  const wall = role === 'tv' ? 'tv' : 'projector';
-  const fill = cfg.mode !== 'mapped';
+  const fill = !mapped;
   fx.frame(p, {
     playing: !!(state.transport && state.transport.playing),
     audioEl: player.separateAudio ? player.audio : player.video,
     ownsAudio,
-    wall,
+    wall: role === 'tv' ? 'tv' : 'projector',
     off: fill && cfg.fx === false,
     aspect: fill ? canvas.height / Math.max(1, canvas.width) : undefined,
     shapes: !fill,
     characters: activeCharacters(state),
-    listen: vis,
+    sinkId: ownsAudio ? (state.settings && state.settings.audioSinkId) || '' : '',
   });
-  visuals.frame(vis, {
+  const visOpts = {
     time: targetTime(state.transport || {}),
     audio: fx.features(),
-    cfg: state.settings && state.settings.visualsCfg,
+    cfg: visualsCfgFor(state),
     key: state.transport && state.transport.source && state.transport.source.key,
     playing: !!(state.transport && state.transport.playing),
-  });
+  };
+  visuals.frame(vis, visOpts);
+  surfaceVisuals.frame(visOpts);
   if (fx.outgoingAudio && (performance.now() - lastAudioSend) > 33) {
     lastAudioSend = performance.now();
     api.fxAudio(fx.outgoingAudio);
   }
 
-  engine.render(p, { mode: cfg.mode, fit: state.settings?.fitMode || 'contain', blend: player.blendFactor(g.smoothMotion) });
+  engine.render(p, { mode: mapped ? 'mapped' : 'fill', fit: state.settings?.fitMode || 'contain', blend: player.blendFactor(g.smoothMotion) });
 
   const t = state.transport || {};
   let msg = '';

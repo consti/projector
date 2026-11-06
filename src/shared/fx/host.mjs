@@ -35,12 +35,10 @@ export class FxHost {
    * Returns a packet to broadcast, or null.
    */
   _audio(fx, opts) {
-    // opts.listen: something other than the effects wants the music (visuals)
-    if ((!fx.audio || !fx.audio.enabled) && !opts.listen) {
-      if (this.reactor) { this.reactor.detach(); }
-      this.audio = AUDIO_EMPTY;
-      return null;
-    }
+    // The analysis always runs in the window that carries the sound: the
+    // operator's beat meter has to show what the effects would hear before
+    // "React to sound" is on, and one FFT a frame costs nothing. Whether the
+    // layers act on it is decided in frame().
     const now = performance.now();
     const dt = Math.min(0.2, (now - this._lastAudioT) / 1000) || 1 / 60;
     this._lastAudioT = now;
@@ -56,6 +54,7 @@ export class FxHost {
     } else if (opts.audioEl && opts.ownsAudio) {
       if (!this.reactor) this.reactor = new AudioReactor();
       if (this.reactor.attach(opts.audioEl)) {
+        this.reactor.setSink(opts.sinkId);
         this.audio = this.reactor.update(dt, fx.audio);
         return this.reactor.packet();
       }
@@ -71,7 +70,8 @@ export class FxHost {
   /**
    * Call once per frame, before engine.render(). The audio analysis runs even
    * when this window is not drawing effects, because the window that carries
-   * the sound is often not the one showing them.
+   * the sound is often not the one showing them. opts.sinkId is the output
+   * device the sound should reach (see AudioReactor.setSink).
    */
   frame(project, opts = {}) {
     const fx = fxConfig(project);

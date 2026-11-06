@@ -27,7 +27,7 @@ export const SPECTRUM_N = 48;   // log-spaced bins, 40 Hz .. 16 kHz, each 0..1 w
 
 export const EMPTY = Object.freeze({
   level: 0, bass: 0, low: 0, mid: 0, high: 0, air: 0,
-  beat: 0, phase: 0, sine: 0.5, flux: 0, onset: false, bpm: 0, live: false,
+  beat: 0, phase: 0, sine: 0.5, flux: 0, onset: false, bpm: 0, beats: 0, live: false,
   spectrum: Object.freeze(new Array(SPECTRUM_N).fill(0)),
 });
 
@@ -81,6 +81,7 @@ export class AudioReactor {
     this.phase = 0;
     this.period = 0.5;
     this.beat = 0;
+    this.beatCount = 0;      // tempo-phase wraps since the reactor started: an absolute beat index every window shares
     this.failed = null;
   }
 
@@ -154,6 +155,18 @@ export class AudioReactor {
       this.failed = e.message;
       return false;
     }
+  }
+
+  /**
+   * Where the sound goes. Once an element is routed through the analyser its
+   * own setSinkId no longer applies, so the chosen output device (an AirPlay
+   * receiver, say) has to be set on the context instead.
+   */
+  setSink(id) {
+    id = id || '';
+    if (!this.ctx || this._sink === id) return;
+    this._sink = id;
+    if (typeof this.ctx.setSinkId === 'function') this.ctx.setSinkId(id).catch(() => {});
   }
 
   /** Stop reading. The audio graph stays wired — see attach(). */
@@ -256,6 +269,9 @@ export class AudioReactor {
       }
       this.lastOnset = now;
       this.beat = 1;
+      // an onset late in the beat is this beat arriving; one early in it is a
+      // double hit, and the running beat simply restarts
+      if (this.phase > 0.5) this.beatCount++;
       this.phase = 0;
     }
     this.beat = Math.max(0, this.beat - dt / Math.max(0.05, o.beatHold == null ? 0.22 : o.beatHold));
@@ -268,13 +284,15 @@ export class AudioReactor {
       while (period > 1.15) period /= 2;
       this.period = period;
     }
-    this.phase = (this.phase + dt / Math.max(0.2, this.period)) % 1;
+    this.phase += dt / Math.max(0.2, this.period);
+    if (this.phase >= 1) { this.phase -= Math.floor(this.phase); this.beatCount++; }
 
     f.beat = this.beat;
     f.phase = this.phase;
     f.sine = 0.5 + 0.5 * Math.cos(this.phase * Math.PI * 2);
     f.onset = onset;
     f.bpm = this.period > 0 ? Math.round(60 / this.period) : 0;
+    f.beats = this.beatCount;
     f.live = true;
     return f;
   }
@@ -285,7 +303,7 @@ export class AudioReactor {
     return {
       level: r3(f.level), bass: r3(f.bass), low: r3(f.low), mid: r3(f.mid),
       high: r3(f.high), air: r3(f.air), beat: r3(f.beat), phase: r3(f.phase),
-      sine: r3(f.sine), flux: r3(f.flux), onset: f.onset, bpm: f.bpm, live: f.live,
+      sine: r3(f.sine), flux: r3(f.flux), onset: f.onset, bpm: f.bpm, beats: f.beats | 0, live: f.live,
       spectrum: Array.from(f.spectrum, (v) => Math.round(v * 100) / 100),
     };
   }

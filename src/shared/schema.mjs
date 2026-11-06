@@ -33,6 +33,96 @@ export function defaultMask(over = {}) {
 
 const clone = (v) => (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v);
 
+// What a surface shows. 'video' takes its `src` region of the film (or of the
+// visuals when they stand in for it); 'visuals' runs its own generated scene;
+// 'colour' is a flat colour; 'off' lights nothing.
+export const CONTENT_KINDS = [
+  ['video', 'The video'],
+  ['visuals', 'Visuals (own scene)'],
+  ['colour', 'A colour'],
+  ['off', 'Nothing'],
+];
+export function defaultContent(over = {}) {
+  return { kind: 'video', scene: 'auto', colour: '#303030', ...over };
+}
+
+/**
+ * A map: one arrangement of surfaces and shapes for one wall. A project holds
+ * several, and each output picks the one it shows.
+ */
+export function defaultMap(over = {}) {
+  return {
+    id: uid('map'),
+    name: 'Wall',
+    surfaces: [defaultSurface({ name: 'Main wall', mesh: { cols: 1, rows: 1, pts: [[0, 0], [1, 0], [0, 1], [1, 1]] } })],
+    masks: [],
+    ...over,
+  };
+}
+
+/**
+ * Make sure the project has its maps, and that `project.surfaces` /
+ * `project.masks` are the arrays of the map being edited (`project.mapId`), so
+ * the editor and the renderers keep binding to those two names. Projects
+ * saved before maps existed carry their surfaces at the top level; they become
+ * the first map.
+ */
+export function ensureMaps(project) {
+  if (!Array.isArray(project.maps) || !project.maps.length) {
+    project.maps = [defaultMap({
+      name: 'Wall',
+      surfaces: Array.isArray(project.surfaces) ? project.surfaces : [],
+      masks: Array.isArray(project.masks) ? project.masks : [],
+    })];
+  }
+  for (const m of project.maps) {
+    if (!m.id) m.id = uid('map');
+    if (!m.name) m.name = 'Map';
+    if (!Array.isArray(m.surfaces)) m.surfaces = [];
+    if (!Array.isArray(m.masks)) m.masks = [];
+    for (const s of m.surfaces) if (!s.content || typeof s.content !== 'object') s.content = defaultContent();
+  }
+  const cur = project.maps.find((m) => m.id === project.mapId) || project.maps[0];
+  project.mapId = cur.id;
+  project.surfaces = cur.surfaces;
+  project.masks = cur.masks;
+  return project.maps;
+}
+
+export function ensureProject(project) {
+  ensureFx(project);
+  ensureMaps(project);
+  return project;
+}
+
+/**
+ * Which map an output shows: its `mapId`, 'fill' for the plain full-screen
+ * picture, or the first map when nothing was chosen (the TV used to say
+ * `mode: 'fill' | 'mapped'`; that is honoured).
+ */
+export function mapIdFor(project, outputs, role) {
+  const o = (outputs && outputs[role]) || {};
+  const maps = project.maps || [];
+  if (o.mapId === 'fill') return null;
+  if (o.mapId && maps.some((m) => m.id === o.mapId)) return o.mapId;
+  if (role === 'tv' && o.mode !== 'mapped' && !o.mapId) return null;
+  return maps.length ? maps[0].id : null;
+}
+
+/**
+ * The project as one wall sees it: the same project with the surfaces and
+ * shapes of the map that wall shows. `mapped` is false for the plain
+ * full-screen picture (no surfaces, no shapes, just the frame).
+ */
+export function wallProject(project, outputs, role) {
+  ensureMaps(project);
+  const id = mapIdFor(project, outputs, role);
+  const m = id ? project.maps.find((x) => x.id === id) : null;
+  if (!m) return { project, map: null, mapped: false };
+  if (m.id === project.mapId) return { project, map: m, mapped: true };
+  return { project: { ...project, surfaces: m.surfaces, masks: m.masks, mapId: m.id }, map: m, mapped: true };
+}
+
 export function defaultFx() {
   return {
     enabled: false,
@@ -129,11 +219,14 @@ export function defaultProject() {
     name: 'Main wall',
     mesh: { cols: 1, rows: 1, pts: [[0, 0], [1, 0], [0, 1], [1, 1]] },
   });
+  const map = defaultMap({ name: 'Wall', surfaces: [full], masks: [] });
   return {
-    version: 1,
+    version: 2,
     name: 'Untitled',
-    surfaces: [full],
-    masks: [],
+    maps: [map],
+    mapId: map.id,
+    surfaces: map.surfaces,
+    masks: map.masks,
     fx: defaultFx(),
     global: {
       brightness: 1,
@@ -170,11 +263,12 @@ export function defaultState() {
     audioOut: 'control',       // resolved by main: which window actually plays audio
     clockOwner: 'control',     // resolved by main: the one window that may steer the clock
     outputs: {
-      // role -> { displayId, enabled, mode }
-      projector: { displayId: null, displayLabel: null, enabled: false, mode: 'mapped' },
-      // the TV is a second wall: plain full-screen video with the effects
-      // stack running over it (fx), or a copy of the mapped projector output
-      tv: { displayId: null, displayLabel: null, enabled: false, mode: 'fill', fx: true },
+      // role -> { displayId, enabled, mapId } — mapId names the map this
+      // output shows, 'fill' the plain full-screen picture, null the first map
+      projector: { displayId: null, displayLabel: null, enabled: false, mapId: null },
+      // the TV is a second wall: the plain full-screen picture by default,
+      // with the effects stack running over it (fx), or any map
+      tv: { displayId: null, displayLabel: null, enabled: false, mapId: 'fill', fx: true },
     },
     settings: {
       audioTarget: 'auto',     // auto | tv | projector | control | none
@@ -193,6 +287,7 @@ export function defaultState() {
       fxSet: '',               // the active set's name, or '' for every effect
       visuals: false,          // replace the video with generated visuals, for every track
       visualsFor: [],          // videos (videoKey) that always get visuals instead of their picture
+      visualsByKey: {},        // per-video overrides of visualsCfg, keyed by videoKey
       visualsCfg: { scene: 'auto', every: 30, speed: 1, react: 1, palette: 'auto', emoji: '',   // '' = the default emoji
         city: 'auto', daytime: 'auto', haze: 0.35, ride: 0.3 },                                 // the train ride's city, hour, haze and how high the line runs
       ai: {

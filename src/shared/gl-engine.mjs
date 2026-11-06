@@ -267,6 +267,8 @@ export class Engine {
     this.sourceSize = [1, 1];
     this.fx = null;                 // optional FxSystem, set by the renderer
     this.generator = null;          // optional generated picture in place of the video
+    this.surfaceGenerator = null;   // optional: (surface, W, H) -> { tex, w, h } for surfaces that run their own visuals
+    this._colourTex = new Map();    // flat-colour surfaces: hex -> 1x1 texture
     this._mode = 'mapped';
     this._m = new Float32Array(9);
   }
@@ -599,24 +601,41 @@ export class Engine {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);   // premultiplied source-over
 
-    if (hasSrc) {
+    {
       gl.useProgram(this.progSurface.p);
       this._bindQuad(this.progSurface);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, pic.tex);
-      gl.uniform1i(this.progSurface.u.uTex, 0);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, pic.prev);
-      gl.uniform1i(this.progSurface.u.uPrev, 1);
-      gl.uniform1f(this.progSurface.u.uBlend, blend);
       const U = this.progSurface.u;
-      gl.uniform4f(U.uCrop, pic.crop[0], pic.crop[1], pic.crop[2], pic.crop[3]);
+      gl.uniform1i(U.uTex, 0);
+      gl.uniform1i(U.uPrev, 1);
 
       for (const s of project.surfaces || []) {
         if (!s.enabled) continue;
+        // what this surface shows: its region of the picture, its own
+        // generated scene, a flat colour, or nothing
+        const kind = (s.content && s.content.kind) || 'video';
+        if (kind === 'off') continue;
+        let tex, prev, bl = blend, crop = pic.crop, rect = s.src;
+        if (kind === 'video') {
+          if (!hasSrc) continue;
+          tex = pic.tex; prev = pic.prev;
+        } else if (kind === 'colour') {
+          tex = prev = this._colour(s.content.colour || '#303030');
+          bl = 1; crop = FULL; rect = FULL_RECT;
+        } else {
+          const g = this.surfaceGenerator && this.surfaceGenerator(s, W, H);
+          if (!g || !g.tex) continue;
+          tex = prev = g.tex;
+          bl = 1; crop = FULL; rect = FULL_RECT;
+        }
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, prev);
+        gl.uniform1f(U.uBlend, bl);
+        gl.uniform4f(U.uCrop, crop[0], crop[1], crop[2], crop[3]);
         const mesh = s.mesh;
         const fx = s.fx || {};
-        gl.uniform4f(U.uSrcRect, s.src.x, s.src.y, s.src.w, s.src.h);
+        gl.uniform4f(U.uSrcRect, rect.x, rect.y, rect.w, rect.h);
         gl.uniform4f(U.uFeather, s.feather?.l || 0, s.feather?.r || 0, s.feather?.t || 0, s.feather?.b || 0);
         gl.uniform4f(U.uAdj, fx.brightness || 0, fx.contrast == null ? 1 : fx.contrast,
           fx.saturation == null ? 1 : fx.saturation, fx.gamma == null ? 1 : fx.gamma);
@@ -684,6 +703,25 @@ export class Engine {
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 }
+
+const FULL = [0, 0, 1, 1];
+const FULL_RECT = { x: 0, y: 0, w: 1, h: 1 };
+
+Engine.prototype._colour = function (hex) {
+  let t = this._colourTex.get(hex);
+  if (t) return t;
+  const gl = this.gl;
+  const c = hexToRgb(hex);
+  t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+    new Uint8Array([Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255), 255]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  if (this._colourTex.size > 64) { for (const [k, v] of this._colourTex) { gl.deleteTexture(v); this._colourTex.delete(k); break; } }
+  this._colourTex.set(hex, t);
+  return t;
+};
 
 function hexToRgb(h) {
   const n = parseInt(h.replace('#', ''), 16);

@@ -1201,8 +1201,27 @@ const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'm2
 function ipc() {
   ipcMain.handle('state:get', () => state);
   ipcMain.handle('state:patch', (e, patch) => { patchState(patch); return true; });
+  // A project edit arrives at pointer rate while a corner or a slider is
+  // dragged. The output windows need every step; the control window, which
+  // made the edit and already shows it, only needs an occasional echo so its
+  // panels stay in step — broadcasting the whole state (playlist and all) back
+  // to it sixty times a second is what made the editor feel heavy.
+  let controlEchoAt = 0, controlEchoTimer = null;
+  const echoControl = () => {
+    controlEchoTimer = null;
+    controlEchoAt = Date.now();
+    if (control && !control.isDestroyed()) control.webContents.send('state', state);
+  };
   ipcMain.handle('project:set', (e, project) => {
-    state.project = project; state.dirty = true; pushState(); return true;
+    state.project = project; state.dirty = true;
+    state.audioOut = resolveAudio();
+    state.clockOwner = resolveClockOwner();
+    toOutputs('state', state);
+    const wait = 250 - (Date.now() - controlEchoAt);
+    if (wait <= 0) echoControl();
+    else if (!controlEchoTimer) controlEchoTimer = setTimeout(echoControl, wait);
+    autosave();
+    return true;
   });
 
   // Effects interaction and one-shot actions are relayed straight to the

@@ -13,9 +13,18 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 button,select,input{font:inherit;color:inherit}
 
 #app{display:grid;height:100vh;
-  grid-template-columns:64px minmax(0,1fr);
+  grid-template-columns:64px minmax(0,1fr) 400px;
   grid-template-rows:38px 52px minmax(0,1fr);
-  grid-template-areas:"drag drag" "top top" "rail main";}
+  grid-template-areas:"drag drag drag" "top top top" "rail main side";}
+/* the side column: the live preview on every screen, plus the view's own panels under it */
+#side{grid-area:side;border-left:1px solid var(--line);background:var(--panel);overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;min-height:0;overscroll-behavior:contain}
+#sidePreview[hidden],.sideHost[hidden]{display:none}
+#sidePreview .stageSlot{aspect-ratio:16/9;flex:none;margin:0 var(--padIn) var(--padIn);border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.sideHost{display:flex;flex-direction:column}
+#side::-webkit-scrollbar{width:10px}
+#side::-webkit-scrollbar-track{background:#111317}
+#side::-webkit-scrollbar-thumb{background:#333941;border-radius:6px;border:2px solid #111317}
 #drag{grid-area:drag;-webkit-app-region:drag;display:flex;align-items:center;justify-content:center;
   border-bottom:1px solid var(--line);background:var(--panel);gap:8px;font-size:12px;color:var(--dim)}
 #drag b{color:var(--fg);font-weight:600}
@@ -131,8 +140,16 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .pit:hover .vis{opacity:1}
 .pit .vis:hover{color:var(--fg)}
 .pit .vis.on{opacity:1;color:#c8a0ff}
-#tHide{font-size:15px;line-height:1}
-#tHide.on{background:#6a3fb5;border-color:#6a3fb5;color:#fff}
+/* maps list in the Map view */
+.mapRow{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;cursor:pointer}
+.mapRow:hover{background:#1f232a}
+.mapRow.on{background:#16344f}
+.mapRow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.mapRow .tag{flex:none}
+.mapRow .ar{color:var(--dim2);flex:none;padding:0 2px;font-size:10px;opacity:0}
+.mapRow:hover .ar{opacity:1}
+.mapRow .ar:hover{color:var(--fg)}
+.lay .nm .cn{color:var(--dim2);font-size:10.5px;margin-left:5px}
 #plEmpty{line-height:1.6}
 
 /* --- camera --- */
@@ -490,3 +507,30 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 .musicRow .d{font-size:10.5px;color:var(--dim2);font-family:ui-monospace,Menlo,monospace;flex:none;width:44px;text-align:right}
 .musicRow .btn.sm{opacity:0;flex:none}
 .musicRow:hover .btn.sm{opacity:1}
+
+/* --- top bar: the beat meter, and the Video / Visuals choice --- */
+#tSound{display:flex;align-items:center;gap:7px;height:28px;padding:0 9px 0 8px;cursor:pointer;color:var(--dim);
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);transition:border-color .12s}
+#tSound:hover{border-color:#3a4048}
+#tSound .sBeat{width:10px;height:10px;border-radius:50%;flex:none;background:#3a4048;opacity:.3;transform:scale(.55)}
+#tSound.live .sBeat{background:var(--warn);box-shadow:0 0 7px var(--warn)}
+#tSound .sBars{display:flex;gap:2px;align-items:flex-end;height:16px;width:29px}
+#tSound .sBars i{flex:1;display:block;background:#3a4048;border-radius:1px;height:4%}
+#tSound.live .sBars i{background:var(--dim)}
+#tSound.live.react .sBars i{background:var(--accent2)}
+#tSound .sTxt{font-family:ui-monospace,Menlo,monospace;font-size:11px;min-width:56px;text-align:left}
+#tSound.live .sTxt{color:var(--fg)}
+.soundPop{position:fixed;z-index:90;width:340px;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 14px 50px #000d;padding:var(--padIn);display:flex;flex-direction:column;gap:var(--gap)}
+.soundPopHead{display:flex;align-items:center;gap:8px}
+.meter.big{height:72px}
+.meter.big .lbl{font-size:9px}
+.visSeg .btn{font-size:11.5px;padding:4px 9px}
+.visSeg .btn[disabled]{cursor:default;opacity:.5}
+.visSeg .btn.on[disabled]{opacity:.85}
+.visNow{font-size:15px;font-weight:600;line-height:1.2}
+.visNow.vis{color:#c8a0ff}
+
+/* --- live auditions in the catalogue --- */
+.fxClip.live{object-fit:fill}
+.fxHoverHint{flex-basis:100%}

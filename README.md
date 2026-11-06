@@ -34,15 +34,25 @@ Requires `yt-dlp` for YouTube (installed via Homebrew).
 Everything is authored in **output space** — the projector's own 1920x1080
 frame, stored as fractions so it survives a resolution change.
 
-- An **Area** (surface) takes a rectangular region of the video (`src`) and maps
-  it onto a four-corner quad on the output. The corners can sit anywhere, and
-  the texture lookup uses a true inverse homography, so a wall seen at an angle
-  gets correct perspective rather than a bent-looking stretch. Raise the warp
-  grid above 1x1 for curved or uneven walls.
-- A **Mask** is a polygon in output space that turns the projector's light off.
-  Because your paintings and couch don't move, masks stay put no matter which
-  video plays. Each has its own softness (feather) and grow/shrink.
-- Masks are cached on the GPU and only rebuilt when you edit them, so soft
+- A **Map** is one arrangement of surfaces and shapes for one wall. A project
+  holds several — one per wall, or several versions of the same wall — and each
+  output (projector, TV) picks the map it shows, or the plain full-screen
+  picture. The Map view edits one map at a time; the live preview beside every
+  other view shows whichever wall it is switched to.
+- A **Surface** takes a region of the picture and maps it onto a four-corner
+  quad on the output. The corners can sit anywhere, and the texture lookup uses
+  a true inverse homography, so a wall seen at an angle gets correct perspective
+  rather than a bent-looking stretch. Raise the warp grid above 1x1 for curved
+  or uneven walls. Each surface also chooses **what it shows**: its region of
+  the video (so several surfaces can share one picture, see Presets), a
+  generated **visuals scene of its own** running to the music, a flat colour,
+  or nothing.
+- A **Shape** is a polygon in output space marking something on the wall the
+  projector must not light — a painting, the plant, the couch. It stays black
+  whatever plays, and the effects treat it as solid. Each has its own softness
+  (feather) and grow/shrink. A surface can be turned into a shape of the same
+  outline and back (*Turn into a shape* / *Turn into a surface* in Selection).
+- Shapes are cached on the GPU and only rebuilt when you edit them, so soft
   edges cost nothing per frame.
 
 ## Two walls, one picture
@@ -100,8 +110,12 @@ glass.
 ### The Effects screen
 
 The middle of the Effects view is a catalogue: every effect as a card with a
-captured thumbnail — **hover a card and it plays a short clip** of the effect in
-motion — searchable and filtered by group, with the scenes along the top. Click a card to add it to the stack on the left, where each layer's
+captured thumbnail — **hover a card and the effect runs live** in it, over the
+picture that is playing and to the music that is playing, with your masked
+shapes as its world (a second, small effects system renders it, so the stack on
+the wall is untouched; where that is not possible the recorded clip plays
+instead) — searchable and filtered by group, with the scenes along the top.
+Hovering a scene card auditions the whole scene. Click a card to add it to the stack on the left, or **Cmd-click it to make it the only effect**; in the stack, **Cmd-click a layer to solo it** (Cmd-click again brings the others back). Each layer's
 parameters, actions and sound links live. The preview sits on the right with
 the world, camera, look and sound controls under it. **Hover the preview** and
 it grows over the view so you can watch the wall while you work; the
@@ -397,7 +411,12 @@ Turn on **React to sound** and the effects follow the audio of whatever is
 playing. An analyser sits in the audio path of whichever window is actually
 carrying the sound — projector, TV or control — and the features it derives are
 relayed to the other windows, so the projector can react to what the TV is
-playing.
+playing. The **beat meter in the top bar** shows what it hears at every moment:
+a dot that pulses on the beat, five bands, the estimated tempo, and a word
+when nothing is arriving (*paused*, *silent*, *no signal*). The analysis runs
+whether or not the effects react, so you can see the beat is being read from
+the current media before you link anything to it; click the meter for the full
+meter, the *React to sound* switch, sensitivity, and where the sound is played.
 
 Six signals are available, all normalised and adaptively gained so a quiet film
 and a loud one both drive the effects over their full range:
@@ -447,18 +466,47 @@ balls, strike lightning, break the picture).
 
 ## Visuals instead of the video
 
-Some music videos are not worth looking at. Switch on **Visuals** in the top bar
-and the picture is replaced by generated scenes that move with the sound; the
-video keeps playing, hidden, because it carries the audio and the clock. The
-generated picture goes into the engine exactly where a video frame would, so
-everything else still applies — the wall mapping, the masks, the TV, and any
-effects you stack on top (snow on a fractal, water refracting a laser show).
+Some music videos are not worth looking at. What the wall shows is one choice,
+made in the top bar or at the top of the Visuals view: **Video**, **Visuals ·
+track** or **Visuals · all**. With visuals on, the picture is replaced by
+generated scenes that move with the sound; the video keeps playing, hidden,
+because it carries the audio and the clock. The generated picture goes into the
+engine exactly where a video frame would, so everything else still applies —
+the wall mapping, the masks, the TV, and any effects you stack on top (snow on
+a fractal, water refracting a laser show).
 
-- **For every track** — the *Visuals* switch in the top bar.
-- **For one video** — press `H` while it plays, the ◐ button next to the title,
-  ◐ on its playlist row, or *Hide the video* in the library editor. The video is
+- **Visuals · all** — every track.
+- **Visuals · track** — this video only, remembered so it plays with visuals
+  every time it comes up. `H` toggles it while it plays; ◐ on a playlist row or
+  *Hide the video* in the library editor marks any other track. The video is
   remembered by its YouTube id, so this follows it from stream to cache to
   library.
+- An Apple Music song has no picture, so it always gets visuals; the choice is
+  greyed out while one plays.
+
+The Visuals view says in words what is on the wall right now and why (*The
+video — visuals are off for this track*, *Visuals · Lava lamp — this track is
+marked*), so there is never a question of whether they are on.
+
+### Locked to the music
+
+The visuals are driven by a beat clock rather than a stopwatch. The analyser's
+tempo estimate (or a **BPM** you type or **Tap** in) gives every scene a phase:
+in *Locked to the beat* mode the scene's time advances one step per beat with a
+push on each beat, so tunnel rings, grid lines, cells and strobes land on the
+beat, and scene changes happen **on the bar** (every 4, 8, 16 or 32 bars) rather
+than on a timer. The beat counter is read in the window that plays the sound
+and relayed, so the projector, the TV and the preview change scene at the same
+instant. The panel shows the detected tempo and whether it has locked;
+*Free* mode is the old behaviour, where loudness pushes the picture along.
+
+*Responds* sets how much the loudness and bands drive the picture, *Beat kick*
+how hard a beat hits, *Smoothing* steadies a jittery track, *Brightness* the
+overall level. **Remember for this track** keeps a separate set of all of these
+for the video that is playing (stored by its YouTube id or Apple Music
+identity), so a track that wants 120 bpm by hand, a slower speed and a held
+scene keeps them every time it comes round; every other track uses the shared
+settings.
 
 The **Visuals** view is a catalogue of the scenes, a card each with a captured
 frame; **hover a card and it renders live**, small, to the music that is
@@ -573,14 +621,14 @@ The same train ride in four cities at four hours:
 <td align="center" valign="top"><img src="src/renderer/control/visual-thumbs/train-wire-night.jpg" width="220" alt="Wireframe at night"><br><sub>Wireframe, night</sub></td>
 </tr></table>
 
-## Marking areas to black out
+## Shapes: marking what must stay dark
 
-- **+ Mask** drags a rectangle, **+ Shape** clicks a polygon (Enter or click the
-  first point to close).
+- **+ Shape** drags a rectangle, **+ Shape (draw)** clicks a polygon (Enter or
+  click the first point to close).
 - Double-click an edge to add a point, Backspace on a point to remove it.
 - **Softness** feathers the edge, **Grow** expands or shrinks it — useful to
   cover a picture frame edge without a visible sliver of light.
-- **Show only inside (invert)** flips it: everything outside goes black. Handy
+- **Invert: light only inside** flips it: everything outside goes black. Handy
   to restrict the picture to one panel.
 
 ## Camera assist (Continuity Camera)
@@ -732,10 +780,11 @@ path the pointer uses. Several phones can be connected at once; they all push.
 
 | Role | What it does |
 | --- | --- |
-| Projector | Full mapped output: areas, warps and masks, with the effects running over the picture and around your shapes |
-| TV | The same video plain and full-screen (contain / cover / stretch) **with the same effects running over it** — its own simulation, in its own aspect, with no masked shapes, only the edges of its frame — or a copy of the mapped output |
+| Projector | Shows a map: surfaces, warps and shapes, with the effects running over the picture and around your shapes |
+| TV | By default the plain full-screen picture (contain / cover / stretch) **with the same effects running over it** — its own simulation, in its own aspect, with no shapes, only the edges of its frame — or any map, mapped exactly like the projector |
 
-The TV is a second wall rather than a mirror. *Effects on the TV* in Setup
+Which map an output shows is chosen under *Shown on* in the Map view or in
+Setup → Outputs. The TV is a second wall rather than a mirror. *Effects on the TV* in Setup
 turns its stack on and off; each effect layer chooses which walls it shows on
 (*Show on* in the Effects view), so the water can flood the projector wall
 while the TV only carries the kaleidoscope. The live preview's *Projector / TV*
@@ -755,12 +804,13 @@ bury the only way to operate the app. With two screens and two outputs there is
 no free screen left, so the output sharing with the control window gives up its
 top status; it is still full-screen, and nothing else is on that display anyway.
 
-## Wall setups
+## Snapshots
 
-The mapping, masks and effects you last had on screen come back by themselves
-when you reopen the app — that is the autosaved session. **Wall setups** are for
-keeping more than one: name the current setup, save it, and switch between them
-from the dropdown. They are plain JSON in
+Everything you last had on screen — every map, the effects and the settings —
+comes back by itself when you reopen the app — that is the autosaved session.
+Several walls for one evening are **maps** (Map view); **Snapshots** (Setup) are
+for keeping whole evenings: name the current state, save it, and switch between
+snapshots from the dropdown. They are plain JSON in
 `~/Library/Application Support/projector/mappings/`, so they survive a
 reinstall and can be copied between machines. If the session is ever lost, the
 most recently saved setup is loaded instead.

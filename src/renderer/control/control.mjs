@@ -2,7 +2,9 @@ import { Stage } from '/renderer/control/stage.mjs';
 import { CameraPanel } from '/renderer/control/camera.mjs';
 import { Player, targetTime } from '/shared/player.mjs';
 import { makePattern } from '/shared/patterns.mjs';
-import { defaultProject, defaultSurface, defaultMask, ensureFx, uid, defaultFxLayer, activeCharacters } from '/shared/schema.mjs';
+import { defaultProject, defaultSurface, defaultMask, defaultMap, defaultContent, ensureFx, ensureProject, ensureMaps, wallProject, mapIdFor, CONTENT_KINDS, uid, defaultFxLayer, activeCharacters } from '/shared/schema.mjs';
+import { SurfaceVisuals } from '/shared/surface-visuals.mjs';
+import { visualsCfgFor, hasVisualsOverride } from '/shared/visuals-cfg.mjs';
 import { PeopleView, funnyName } from '/renderer/control/characters.mjs';
 import * as Mesh from '/shared/mesh.mjs';
 import { FxHost } from '/shared/fx/host.mjs';
@@ -15,6 +17,7 @@ import { RemotePanel } from '/renderer/control/remote.mjs';
 import { LibraryView } from '/renderer/control/library.mjs';
 import { AiDirector } from '/renderer/control/ai.mjs';
 import { DepthSource } from '/renderer/control/depth.mjs';
+import { FxAudition } from '/renderer/control/audition.mjs';
 import { REGISTRY as FX_REGISTRY, QUALITY, withDefaults, PALETTE_MODES } from '/shared/fx/system.mjs';
 
 const QUALITY_KEYS = Object.keys(QUALITY);
@@ -76,12 +79,21 @@ const stage = new Stage({
   view: $('#view'), frame: $('#frame'), glc: $('#glc'), ovc: $('#ovc'),
   camLayer: $('#camLayer'), info: $('#stageInfo'),
 }, {
-  project: () => project,
+  project: () => stageProject(),
   outputSize: () => outputSize(),
   onChange: (commit) => pushProject(commit),
   onSelect: () => buildInspector(),
   fxPoints: () => fxPoints(),
 });
+
+// What the stage shows: in the Map view the map being edited; everywhere else
+// the wall the preview is switched to, with that wall's map (or the plain
+// full-screen picture when the output shows no map).
+function stageWall() {
+  if (!S || currentView === 'stage') return { project, mapped: true, map: null };
+  return wallProject(project, S.outputs, previewWall);
+}
+function stageProject() { return stageWall().project; }
 
 // The selected effect layer's draggable points: any effect with both an `x`
 // and a `y` parameter gets a handle on the stage (a lamp, a vanishing point,
@@ -117,6 +129,19 @@ function fxPoints() {
 // ---------------------------------------------------------------- effects --
 const fxHost = new FxHost(stage.engine, 'control');
 const visualsHost = new VisualsHost(stage.engine);
+// surfaces that run their own generated scene
+const surfaceVisuals = new SurfaceVisuals(stage.engine.gl);
+stage.engine.surfaceGenerator = (sf, W, H) => surfaceVisuals.render(sf, W, H);
+// hovering a catalogue card runs that effect live over the current picture
+const audition = new FxAudition({
+  project: () => project,
+  // the plain picture: the video (or test pattern); when visuals have replaced
+  // it, the stage's own canvas, which was just drawn this frame
+  source: () => { const src = previewSource(); if (sourceReady(src) && !visualsOn(S)) return src; return stage.glc.width ? stage.glc : null; },
+  crop: () => (S && S.transport.source && !visualsOn(S) ? S.transport.source.crop : null),
+  audio: () => fxHost.features(),
+  characters: () => activeCharacters(S),
+});
 
 // what the Music app is playing, tapped by the main process; the analyser
 // listens to this instead of a media element while an Apple Music song is on
@@ -127,8 +152,28 @@ const isMusicSource = () => !!(S && S.transport.source && S.transport.source.kin
 // ---------------------------------------------------------------- visuals --
 // Visuals in place of the picture: for every track (settings.visuals), or for
 // particular videos that are not worth watching (settings.visualsFor).
-const visualsCfg = () => ({ ...defaultVisualsCfg(), ...((S && S.settings.visualsCfg) || {}) });
-const patchVisualsCfg = (p) => api.patchState({ settings: { visualsCfg: { ...visualsCfg(), ...p } } });
+const visualsCfg = () => visualsCfgFor(S);
+// A change goes to the track's own settings while it has some, otherwise to
+// the settings every track shares.
+function patchVisualsCfg(p) {
+  const key = videoKey(S.transport.source);
+  if (key && hasVisualsOverride(S)) {
+    const by = { ...(S.settings.visualsByKey || {}) };
+    by[key] = { ...by[key], ...p };
+    api.patchState({ settings: { visualsByKey: by } });
+  } else {
+    api.patchState({ settings: { visualsCfg: { ...defaultVisualsCfg(), ...(S.settings.visualsCfg || {}), ...p } } });
+  }
+}
+function setVisualsOverride(on) {
+  const key = videoKey(S.transport.source);
+  if (!key) { toast('Nothing is playing to remember'); return; }
+  const by = { ...(S.settings.visualsByKey || {}) };
+  if (on) by[key] = { ...visualsCfg() };      // start from what shows now
+  else delete by[key];
+  api.patchState({ settings: { visualsByKey: by } });
+  toast(on ? 'This track keeps its own visuals settings' : 'This track uses the shared settings again', 1600);
+}
 const hidesVideo = (key) => !!key && !!S && (S.settings.visualsFor || []).includes(key);
 function setHidesVideo(key, on) {
   if (!key) return;
@@ -136,13 +181,49 @@ function setHidesVideo(key, on) {
   if (on) list.push(key);
   api.patchState({ settings: { visualsFor: list } });
 }
-function toggleThisVideo() {
-  const key = videoKey(S && S.transport.source);
-  if (!key) { toast('Nothing is playing'); return; }
-  const on = !hidesVideo(key);
-  setHidesVideo(key, on);
-  toast(on ? 'Visuals instead of this video, every time it plays' : 'Showing this video again', 1800);
+// What the wall shows, as one choice made in one place: the video, visuals for
+// this track only (remembered for it), or visuals for every track. An Apple
+// Music song has no picture, so it always gets visuals.
+const VIS_MODES = [
+  ['video', 'Video', 'The video shows on the wall'],
+  ['track', 'Visuals \u00b7 track', 'Visuals instead of this video, every time it plays (H)'],
+  ['always', 'Visuals \u00b7 all', 'Visuals instead of every video'],
+];
+function visualsMode() {
+  if (!S) return 'video';
+  if (isMusicSource()) return 'music';
+  if (S.settings.visuals) return 'always';
+  return hidesVideo(videoKey(S.transport.source)) ? 'track' : 'video';
 }
+function setVisualsMode(m) {
+  if (!S || visualsMode() === 'music') return;
+  const key = videoKey(S.transport.source);
+  const list = (S.settings.visualsFor || []).filter((k) => k !== key);
+  if (m === 'track') {
+    if (!key) { toast('Nothing is playing to remember'); return; }
+    list.push(key);
+  }
+  api.patchState({ settings: { visuals: m === 'always', visualsFor: list } });
+  toast(m === 'always' ? 'Visuals instead of every video' : m === 'track' ? 'Visuals instead of this video, every time it plays' : 'Showing the video', 1600);
+}
+function visModeSeg() {
+  const seg = el('div', { class: 'seg visSeg' }, VIS_MODES.map(([m, label, title]) =>
+    el('button', { class: 'btn sm', 'data-mode': m, text: label, title, onclick: () => setVisualsMode(m) })));
+  syncVisSeg(seg);
+  return seg;
+}
+function syncVisSeg(seg) {
+  const mode = visualsMode();
+  const music = mode === 'music';
+  seg.classList.toggle('forced', music);
+  seg.title = music ? 'An Apple Music song is playing: it has no picture, so visuals stand in for it' : 'What the wall shows (Visuals view)';
+  for (const b of seg.querySelectorAll('button')) {
+    const m = b.dataset.mode;
+    b.classList.toggle('on', m === mode || (music && m === 'always'));
+    b.disabled = music;
+  }
+}
+const syncVisSegs = () => { for (const seg of document.querySelectorAll('.visSeg')) syncVisSeg(seg); };
 let fxLayerSel = null;
 const pointer = { x: 0.5, y: 0.5, px: 0.5, py: 0.5, inside: false, down: false, moved: 0 };
 
@@ -262,7 +343,6 @@ let previewWall = 'projector';
 function setPreviewWall(w) {
   if (previewWall === w) return;
   previewWall = w;
-  stage.plain = w === 'tv';
   stage.select(null, null);
   for (const b of document.querySelectorAll('.wallSeg button')) b.classList.toggle('on', b.dataset.wall === w);
   stage.layout(); stage.draw();
@@ -724,8 +804,7 @@ $('#scrub').oninput = (e) => {
   if (d) api.cmd('seek', (e.target.value / 1000) * d);
 };
 $('#gBlack input').onchange = () => { project.global.blackout = !project.global.blackout; pushProject(true); syncTopSideButtons(); };
-$('#tVis input').onchange = (e) => api.patchState({ settings: { visuals: e.target.checked } });
-$('#tHide').onclick = () => toggleThisVideo();
+$('#tVisSlot').appendChild(visModeSeg());
 $('#tAi input').onchange = (e) => { ai.patch({ steer: e.target.checked, enabled: e.target.checked ? true : ai.ai.enabled }); if (e.target.checked) ai.lastTrack = null; };
 $('#oProj input').onchange = () => toggleOutput('projector').then(syncTopSideButtons);
 $('#oTv input').onchange = () => toggleOutput('tv').then(syncTopSideButtons);
@@ -850,10 +929,25 @@ function deleteSelected() {
 }
 
 // -------------------------------------------------------------- inspector ---
-const updaters = [];
-// things that need to move every frame rather than on commit (audio meters)
-const frameUpdaters = [];
-const openSections = new Set(['Visuals', 'Output', 'Wall setups', 'Layers', 'Selection', 'Effects', 'Look', 'Presets', 'AI']);
+// Panel updaters live in groups, one per view, so a change rebuilds only the
+// panels that are showing and the rest are rebuilt when their view comes up.
+// `updaters` run on every commit, `frameUpdaters` every frame (meters).
+const GROUPS = {};
+const group = (name) => GROUPS[name] || (GROUPS[name] = { up: [], fr: [], dirty: true, build: null });
+group('misc').dirty = false;        // controls built once, outside any view
+let building = null;
+const updaters = { push: (f) => (building || group('misc')).up.push(f) };
+const frameUpdaters = { push: (f) => (building || group('misc')).fr.push(f) };
+function buildGroup(name, fn) {
+  const g = group(name);
+  if (fn) g.build = fn;
+  if (!g.build) return;
+  g.up.length = 0; g.fr.length = 0; g.dirty = false;
+  const prev = building; building = g;
+  try { g.build(); } finally { building = prev; }
+}
+const VIEW_GROUP = { stage: 'map', effects: 'fx', visuals: 'vis', output: 'out' };
+const openSections = new Set(['Visuals', 'Outputs', 'Maps', 'Surfaces & shapes', 'Selection', 'Effects', 'Sound', 'World', 'Picture', 'AI', 'Preview']);
 
 function section(title, kids) {
   const body = el('div', { class: 'body' }, kids);
@@ -940,37 +1034,36 @@ const sourceReady = (el) => !!el && !!(el.videoWidth || el.width);
 // updaters keep working regardless of which view is showing; only the stage
 // element moves and views hide via CSS.
 function buildInspector() {
-  updaters.length = 0;
-  frameUpdaters.length = 0;
-  const hosts = { fx: $('#fxHost'), look: $('#lookHost'), vis: $('#visHost'), mapInspector: $('#stageInspector'), out: $('#outHost') };
-  const scroll = {};
-  for (const k in hosts) if (hosts[k]) scroll[k] = hosts[k].scrollTop;
-
-  hosts.mapInspector.innerHTML = '';
-  hosts.mapInspector.appendChild(layersSection());
-  hosts.mapInspector.appendChild(selectionSection());
-
-  hosts.fx.innerHTML = '';
-  hosts.fx.appendChild(fxSection());
-
-  const browser = $('#fxBrowser');
-  if (browser && !browser.firstChild) browser.appendChild(buildFxBrowser(fxUi()));
-  else if (browser) buildFxBrowser(fxUi());      // refresh the badges
-
-  hosts.vis.innerHTML = '';
-  hosts.vis.appendChild(visualsSection());
-  hosts.look.innerHTML = '';
-  for (const sec of buildFxWorldSections(fxUi())) hosts.look.appendChild(sec);
-  hosts.look.appendChild(lookSection());
-
-  // two columns of cards: the outputs, walls and presets on the left; the models on the right
-  hosts.out.innerHTML = '';
-  hosts.out.appendChild(el('div', { class: 'setupCol' }, [outputSection(), mappingSection(), presetSection()]));
-  hosts.out.appendChild(el('div', { class: 'setupCol' }, [ai.section(fxUi()), depthSection(), helpSection()]));
-
-  // restore scroll so touching a layer doesn't jump the panel to the top
-  for (const k in hosts) if (hosts[k]) hosts[k].scrollTop = Math.min(scroll[k] || 0, Math.max(0, hosts[k].scrollHeight - hosts[k].clientHeight));
+  for (const k of Object.values(VIEW_GROUP)) group(k).dirty = true;
+  buildVisible();
 }
+function buildVisible() {
+  if (!S) return;
+  const name = VIEW_GROUP[currentView];
+  if (name && group(name).dirty) buildGroup(name);
+}
+// Refill a host, keeping its scroll position so touching a layer doesn't jump
+// the panel to the top.
+function refill(host, kids) {
+  const st = host.scrollTop;
+  host.innerHTML = '';
+  for (const k of kids) if (k) host.appendChild(k);
+  host.scrollTop = Math.min(st, Math.max(0, host.scrollHeight - host.clientHeight));
+}
+group('map').build = () => refill($('#stageInspector'), [mapsSection(), layersSection(), selectionSection(), presetSection()]);
+group('fx').build = () => {
+  refill($('#fxHost'), [fxSection()]);
+  const browser = $('#fxBrowser');
+  if (!browser.firstChild) browser.appendChild(buildFxBrowser(fxUi()));
+  else buildFxBrowser(fxUi());      // refresh the badges
+  refill($('#lookHost'), [...buildFxWorldSections(fxUi()), lookSection()]);
+};
+group('vis').build = () => refill($('#visHost'), [visualsSection()]);
+// two columns of cards: the outputs, sound, preview and streams on the left; the models on the right
+group('out').build = () => refill($('#outHost'), [
+  el('div', { class: 'setupCol' }, [outputSection(), soundSetupSection(), previewSection(), streamsSection(), mappingSection()]),
+  el('div', { class: 'setupCol' }, [ai.section(fxUi()), depthSection(), helpSection()]),
+]);
 
 // --- view switching + moving the single stage between views ---
 let currentView = 'stage';
@@ -981,12 +1074,19 @@ function showView(name) {
   for (const v of document.querySelectorAll('#main .view')) v.hidden = v.id !== 'v' + name[0].toUpperCase() + name.slice(1);
   const view = $('#v' + name[0].toUpperCase() + name.slice(1));
   const stageEl = $('#stage');
-  const slot = view && view.querySelector('.stageSlot');
-  if (slot) { stageEl.classList.toggle('docked', name !== 'stage'); slot.appendChild(stageEl); }
-  else { stageEl.classList.add('docked'); $('#stagePark').appendChild(stageEl); }
+  // the stage is big in the Map view and docked in the side column everywhere else
+  const big = name === 'stage';
+  $('#sidePreview').hidden = big;
+  for (const h of document.querySelectorAll('#side .sideHost')) h.hidden = h.dataset.for !== name;
+  const slot = big ? view.querySelector('.stageSlot') : $('#sidePreview .stageSlot');
+  stageEl.classList.toggle('docked', !big);
+  stage.plain = !big;                      // handles and tools only where the map is edited
+  slot.appendChild(stageEl);
+  stage.select(null, null);
   if (name === 'library') libraryView.show(); else libraryView.hide();
   if (name === 'music') musicView.show(); else musicView.hide();
   if (name === 'people') peopleView.show(); else peopleView.hide();
+  buildVisible();
   // the stage changed size — relayout on the next frame
   requestAnimationFrame(() => { stage.layout(); stage.draw && stage.draw(); });
 }
@@ -1016,15 +1116,17 @@ function fxUi() {
     patchSettings: (p) => api.patchState({ settings: p }),
     prompt: (label) => promptModal(label),
     ai,
+    audition,
   });
 }
 
 function syncInspector() {
-  for (const f of updaters) { try { f(); } catch {} }
+  for (const g of Object.values(GROUPS)) if (!g.dirty) for (const f of g.up) { try { f(); } catch {} }
 }
 
 function outputSection() {
   const rows = [];
+  rows.push(el('div', { class: 'hint', text: 'Each output is a screen and a map: which surfaces and shapes it shows (Map view), or the plain full-screen picture.' }));
   for (const role of ['projector', 'tv']) {
     const cfg = S.outputs[role];
     const sel = el('select', {});
@@ -1042,19 +1144,14 @@ function outputSection() {
       el('label', { text: role === 'projector' ? 'Projector' : 'TV' }),
       el('div', { class: 'row nowrap' }, [sel, on]),
     ]));
+    rows.push(mapSelectRow(role));
     if (role === 'tv') {
-      rows.push(selectRow('TV shows', [['fill', 'Full video (fit)'], ['mapped', 'Same as projector']],
-        () => S.outputs.tv.mode, (v) => api.setOutput('tv', { mode: v })));
       rows.push(selectRow('Fit', [['contain', 'Contain (letterbox)'], ['cover', 'Cover (crop)'], ['stretch', 'Stretch']],
         () => S.settings.fitMode, (v) => api.patchState({ settings: { fitMode: v } })));
       rows.push(el('div', { class: 'row' }, [
         toggle('Effects on the TV', () => S.outputs.tv.fx !== false, (v) => api.setOutput('tv', { fx: v }), { push: false }),
       ]));
-      rows.push(el('div', { class: 'hint', text: 'The TV is a second wall: it plays the same video, plain and full-screen, and the effects run over it too. Each effect layer chooses which walls it shows on (Effects view). The TV has no masked shapes, only the edges of its frame.' }));
-    rows.push(selectRow('Preview quality',
-      [['auto', 'Small while an output is open'], ['low', 'Always small'], ['full', 'Always full size']],
-      () => S.settings.previewQuality || 'auto', (v) => api.patchState({ settings: { previewQuality: v } })));
-    rows.push(el('div', { class: 'hint', text: 'The control preview pulls its own copy of the video. Keeping it small leaves the bandwidth for the projector.' }));
+      rows.push(el('div', { class: 'hint', text: 'With the plain picture the TV is a second wall: the same video full-screen, with the effects running over it and no shapes in their world. Give it a map and it is mapped like the projector.' }));
     }
   }
   const pd = S.outputs.projector.displayId, td = S.outputs.tv.displayId;
@@ -1062,44 +1159,70 @@ function outputSection() {
     rows.push(el('div', { class: 'hint', style: 'color:var(--mask)',
       text: 'Projector and TV are both set to the same screen, so one covers the other. Pick different screens, or swap them.' }));
   }
-  if (displays.length > 1) {
-    rows.push(el('div', { class: 'row' }, [
-      el('button', {
-        class: 'btn sm grow', text: 'Swap the two screens',
-        title: 'Send the projector to the TV\u2019s screen and vice versa',
-        onclick: () => api.swapOutputs().then(() => toast('Swapped')),
-      }),
-    ]));
-  }
+  rows.push(el('div', { class: 'row' }, [
+    displays.length > 1 ? el('button', {
+      class: 'btn sm grow', text: 'Swap the two screens',
+      title: 'Send the projector to the TV\u2019s screen and vice versa',
+      onclick: () => api.swapOutputs().then(() => toast('Swapped')),
+    }) : null,
+    el('button', {
+      class: 'btn sm grow', text: 'Identify',
+      title: 'Flash the role and the screen name on each output window',
+      onclick: () => { api.identifyOutputs(); toast('Each open output names itself and its screen for a moment.'); },
+    }),
+    el('button', { class: 'btn sm', text: 'Reload', onclick: () => api.reloadAll() }),
+    el('button', { class: 'btn sm', text: 'Close all', title: 'Close every output window (Cmd+Alt+P)', onclick: () => api.closeAllOutputs() }),
+  ]));
+  rows.push(el('div', { class: 'hint', text: 'Output windows open without taking focus. Esc on an output window, or Cmd+Alt+P from anywhere, closes them.' }));
+  return section('Outputs', rows);
+}
+
+// which map an output shows; the plain full-screen picture is the other choice
+function mapSelectRow(role) {
+  const opts = [['fill', 'Plain picture, full screen'], ...project.maps.map((m) => [m.id, 'Map: ' + m.name])];
+  return selectRow(role === 'projector' ? 'Shows' : 'Shows', opts,
+    () => mapIdFor(project, S.outputs, role) || 'fill',
+    (v) => api.setOutput(role, { mapId: v }));
+}
+
+function soundSetupSection() {
+  const rows = [];
   rows.push(selectRow('Audio from',
     [['auto', 'Auto (first open output)'], ['tv', 'TV'], ['projector', 'Projector'],
      ['control', 'This window'], ['none', 'Muted']],
     () => S.settings.audioTarget || 'auto', (v) => api.patchState({ settings: { audioTarget: v } })));
   rows.push(el('div', { class: 'hint', text: 'Playing audio from: ' + (S.audioOut || 'control') +
     (S.settings.audioTarget !== 'auto' && S.settings.audioTarget !== S.audioOut && S.settings.audioTarget !== 'none'
-      ? '  (the ' + S.settings.audioTarget + ' window is not open)' : '') }));
-  rows.push(selectRow('Output device',
+      ? '  (the ' + S.settings.audioTarget + ' window is not open)' : '') + '. The beat is read in that window and shared with every wall.' }));
+  rows.push(selectRow('Device',
     [['', 'System default'], ...audioDevices.map((d) => [d.id, d.label])],
     () => S.settings.audioSinkId || '',
     (v) => { const d = audioDevices.find((x) => x.id === v); api.patchState({ settings: { audioSinkId: v || null, audioSinkLabel: d ? d.label : null } }); }));
-  rows.push(el('div', { class: 'hint', text: 'Send the sound to a specific output (e.g. an AirPlay receiver) without changing the Mac’s system default.' }));
+  rows.push(el('div', { class: 'hint', text: 'Send the sound to a specific output (e.g. an AirPlay receiver) without changing the Mac\u2019s system default. How the effects react to the sound is under Effects \u2192 Sound.' }));
+  return section('Sound', rows);
+}
+
+function previewSection() {
+  const rows = [];
+  rows.push(selectRow('Quality',
+    [['auto', 'Small while an output is open'], ['low', 'Always small'], ['full', 'Always full size']],
+    () => S.settings.previewQuality || 'auto', (v) => api.patchState({ settings: { previewQuality: v } })));
+  rows.push(el('div', { class: 'row' }, [
+    toggle('Effects in the preview', () => project.fx.preview !== false, (v) => { project.fx.preview = v; }, { title: 'Simulate the effects in this window too. Off saves this Mac\u2019s GPU for the walls.' }),
+  ]));
+  rows.push(el('div', { class: 'hint', text: 'The preview pulls its own copy of the video. Keeping it small leaves the bandwidth for the projector.' }));
+  return section('Preview', rows);
+}
+
+function streamsSection() {
+  const rows = [];
   rows.push(selectRow('YouTube max', [['720', '720p'], ['1080', '1080p'], ['1440', '1440p'], ['2160', '4K']],
     () => S.settings.maxHeight || 1080, (v) => api.patchState({ settings: { maxHeight: Number(v) } })));
   rows.push(el('div', { class: 'row' }, [
     toggle('Pre-download streams', () => S.settings.preDownload !== false, (v) => api.patchState({ settings: { preDownload: v } }), { push: false }),
   ]));
-  rows.push(el('div', { class: 'hint', text: 'Every streamed track is pulled down as it plays and played from disk next time. The last 25 stay in a cache (Library → Streamed lately); press ★ Keep on a playlist item to make it part of the library.' }));
-  rows.push(el('div', { class: 'row' }, [
-    el('button', {
-      class: 'btn grow', text: 'Identify outputs',
-      title: 'Flash the role and the screen name on each output window',
-      onclick: () => { api.identifyOutputs(); toast('Each open output names itself and its screen for a moment.'); },
-    }),
-    el('button', { class: 'btn', text: 'Reload', onclick: () => api.reloadAll() }),
-  ]));
-  rows.push(el('button', { class: 'btn', text: 'Close all outputs  (Cmd+Alt+P)', onclick: () => api.closeAllOutputs() }));
-  rows.push(el('div', { class: 'hint', text: 'Output windows open without taking focus. Esc on an output window, or Cmd+Alt+P from anywhere, closes them.' }));
-  return section('Output', rows);
+  rows.push(el('div', { class: 'hint', text: 'Every streamed track is pulled down as it plays and played from disk next time. The last 25 stay in a cache (Library \u2192 Streamed lately); press \u2605 Keep on a playlist item to make it part of the library.' }));
+  return section('Streams', rows);
 }
 
 // Named wall setups: save the geometry you spent an evening aligning, and get
@@ -1155,8 +1278,8 @@ function mappingSection() {
     }),
     el('button', { class: 'btn', text: '\u2026', title: 'Show the files in Finder', onclick: () => api.revealMappings() }),
   ]));
-  rows.push(el('div', { class: 'hint', text: 'Whatever you last had on screen comes back by itself when you reopen the app — these named setups are for keeping several walls and switching between them.' }));
-  return section('Wall setups', rows);
+  rows.push(el('div', { class: 'hint', text: 'A snapshot of everything: every map, the effects and the settings. Whatever you last had on screen comes back by itself when you reopen the app; snapshots are for keeping whole evenings and going back to them. Several walls for one evening are maps (Map view).' }));
+  return section('Snapshots', rows);
 }
 
 function selectionSection() {
@@ -1164,7 +1287,7 @@ function selectionSection() {
   if (!o) {
     return section('Selection', [el('div', {
       class: 'hint',
-      text: 'Nothing selected. Click an area or mask in the stage, or use + Area / + Mask to draw one.',
+      text: 'Nothing selected. Click a surface or a shape on the stage, or draw one with + Surface / + Shape.',
     })]);
   }
   const isSurf = stage.sel.type === 'surface';
@@ -1176,7 +1299,23 @@ function selectionSection() {
   ]));
 
   if (isSurf) {
-    rows.push(el('div', { class: 'hint', text: 'Source region — which part of the video lands on this area.' }));
+    const content = o.content || (o.content = defaultContent());
+    rows.push(el('div', { class: 'fxhead', text: 'Shows' }));
+    rows.push(selectRow('Content', CONTENT_KINDS, () => content.kind || 'video', (v) => { content.kind = v; pushProject(true); buildInspector(); }));
+    if (content.kind === 'visuals') {
+      rows.push(selectRow('Scene', [['auto', 'Mix (every scene in turn)'], ...VISUAL_SCENES], () => content.scene || 'auto', (v) => { content.scene = v; pushProject(true); }));
+      rows.push(el('div', { class: 'hint', text: 'This surface runs its own generated scene to the music, whatever the others show. Its speed, colours and tempo follow the Visuals settings.' }));
+    } else if (content.kind === 'colour') {
+      rows.push(colorRow('Colour', () => content.colour || '#303030', (v) => { content.colour = v; }));
+    } else if (content.kind === 'off') {
+      rows.push(el('div', { class: 'hint', text: 'Nothing is drawn here; the surface stays dark but keeps its place.' }));
+    }
+    rows.push(el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm grow', text: 'Turn into a shape', title: 'The same outline, but black: a painting or a piece of furniture the projector must not light', onclick: () => surfaceToShape(o) }),
+    ]));
+    if (content.kind === 'video') {
+    rows.push(el('div', { class: 'fxhead', text: 'Region of the picture' }));
+    rows.push(el('div', { class: 'hint', text: 'Which part of the video lands on this surface. Drag the box; several surfaces can share one picture by taking neighbouring regions (see Presets).' }));
     rows.push(srcMapWidget(o));
     rows.push(el('div', { class: 'quad' }, [
       numberRow('x', () => o.src.x, (v) => (o.src.x = v)),
@@ -1192,8 +1331,10 @@ function selectionSection() {
           pushProject(true);
         },
       }))));
+    }
 
-    rows.push(el('div', { class: 'hint', text: 'Warp mesh — raise for curved or uneven walls.' }));
+    rows.push(el('div', { class: 'fxhead', text: 'Geometry' }));
+    rows.push(el('div', { class: 'hint', text: 'Warp mesh \u2014 raise for curved or uneven walls.' }));
     const meshRow = el('div', { class: 'row' }, [
       el('label', { class: 'grow hint', text: `Grid ${o.mesh.cols} x ${o.mesh.rows}` }),
       el('button', { class: 'btn icon', text: '−', onclick: () => setMesh(o, -1) }),
@@ -1206,7 +1347,8 @@ function selectionSection() {
       el('button', { class: 'btn grow', text: 'Keep aspect', onclick: () => fitAspect(o) }),
     ]));
 
-    rows.push(el('div', { class: 'hint', text: 'Edge blend — soften edges to hide the seam between two walls.' }));
+    rows.push(el('div', { class: 'fxhead', text: 'Edge blend' }));
+    rows.push(el('div', { class: 'hint', text: 'Soften edges to hide the seam between two walls.' }));
     rows.push(slider('Left', () => o.feather.l, (v) => (o.feather.l = v), { max: 0.5, fmt: pc }));
     rows.push(slider('Right', () => o.feather.r, (v) => (o.feather.r = v), { max: 0.5, fmt: pc }));
     rows.push(slider('Top', () => o.feather.t, (v) => (o.feather.t = v), { max: 0.5, fmt: pc }));
@@ -1219,7 +1361,8 @@ function selectionSection() {
         class: 'btn sm', text: 'Rotate 90', onclick: () => { o.fx.rot = ((o.fx.rot | 0) + 1) % 4; pushProject(true); },
       }),
     ]));
-    rows.push(el('div', { class: 'hint', text: 'Colour - match brightness between walls.' }));
+    rows.push(el('div', { class: 'fxhead', text: 'Colour' }));
+    rows.push(el('div', { class: 'hint', text: 'Match brightness between walls.' }));
     rows.push(slider('Opacity', () => o.fx.opacity, (v) => (o.fx.opacity = v), { max: 1, fmt: pc }));
     rows.push(slider('Brightness', () => o.fx.brightness, (v) => (o.fx.brightness = v), { min: -0.5, max: 0.5 }));
     rows.push(slider('Contrast', () => o.fx.contrast, (v) => (o.fx.contrast = v), { min: 0.2, max: 2.5 }));
@@ -1227,11 +1370,14 @@ function selectionSection() {
     rows.push(slider('Gamma', () => o.fx.gamma, (v) => (o.fx.gamma = v), { min: 0.3, max: 3 }));
     rows.push(slider('Hue', () => o.fx.hue, (v) => (o.fx.hue = v), { min: -3.14, max: 3.14 }));
   } else {
+    rows.push(el('div', { class: 'hint', text: 'A shape is something on the wall the projector must not light. It stays black, and the effects treat it as a solid thing: balls land on it, water flows round it, the Shapes effects (shadows, blocks, aura) act on it.' }));
     rows.push(el('div', { class: 'row' }, [
-      toggle('Show only inside (invert)', () => o.invert, (v) => (o.invert = v)),
       toggle('Effects see this shape', () => o.fxCollide !== false, (v) => { o.fxCollide = v; pushProject(true); }),
+      toggle('Invert: light only inside', () => o.invert, (v) => (o.invert = v), { title: 'Black out everything except this shape' }),
     ]));
-    rows.push(el('div', { class: 'hint', text: 'Shapes the effects can see are solid for balls and water, and are what the Shapes effects (shadows, blocks, aura) act on.' }));
+    rows.push(el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm grow', text: 'Turn into a surface', title: 'The same outline, but lit: the picture goes there', onclick: () => shapeToSurface(o) }),
+    ]));
     rows.push(slider('Softness', () => o.feather, (v) => (o.feather = v), { min: 0, max: 120, step: 1, fmt: (v) => v + 'px' }));
     rows.push(slider('Grow', () => o.grow, (v) => (o.grow = v), { min: -60, max: 60, step: 1, fmt: (v) => v + 'px' }));
     rows.push(slider('Strength', () => o.opacity, (v) => (o.opacity = v), { max: 1, fmt: pc }));
@@ -1340,9 +1486,14 @@ function layerRow(o, kind, i, list) {
   chk.checked = !!o.enabled;
   chk.onclick = (e) => e.stopPropagation();
   chk.onchange = () => { o.enabled = chk.checked; pushProject(true); buildInspector(); };
+  const kindTxt = kind === 'surface' && o.content && o.content.kind !== 'video'
+    ? (CONTENT_KINDS.find((k) => k[0] === o.content.kind) || [])[1] : null;
   const row = el('div', { class: 'lay' + (on ? ' on' : '') + (o.enabled ? ' vis' : '') + (kind === 'mask' ? ' mk' : '') }, [
     chk,
-    el('span', { class: 'nm', text: (kind === 'surface' ? (i + 1) + '. ' : '') + (o.name || kind), title: o.name }),
+    el('span', { class: 'nm', title: o.name }, [
+      el('span', { text: (kind === 'surface' ? (i + 1) + '. ' : '') + (o.name || kind) }),
+      kindTxt ? el('span', { class: 'cn', text: kindTxt.toLowerCase() }) : null,
+    ]),
     el('span', { class: 'ar', text: '\u25B2', title: 'Move up',
       onclick: (e) => { e.stopPropagation(); if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); pushProject(true); buildInspector(); } } }),
     el('span', { class: 'ar', text: '\u25BC', title: 'Move down',
@@ -1354,17 +1505,116 @@ function layerRow(o, kind, i, list) {
 
 function layersSection() {
   const rows = [];
-  rows.push(el('div', { class: 'hint', text: 'Projection areas (drawn bottom to top)' }));
-  if (!project.surfaces.length) rows.push(el('div', { class: 'hint', text: 'none - press + Area' }));
+  rows.push(el('div', { class: 'hint', text: 'Surfaces are where the picture goes: each one is a quad you drag onto a wall. Shapes are things on the wall the projector must not light \u2014 a painting, the plant, the couch; they stay black and the effects treat them as solid.' }));
+  rows.push(el('div', { class: 'fxhead', text: 'Surfaces' }));
+  if (!project.surfaces.length) rows.push(el('div', { class: 'hint', text: 'none \u2014 press + Surface' }));
   project.surfaces.forEach((o, i) => rows.push(layerRow(o, 'surface', i, project.surfaces)));
-  rows.push(el('div', { class: 'hint', text: 'Blackout masks', style: 'margin-top:6px' }));
-  if (!project.masks.length) rows.push(el('div', { class: 'hint', text: 'none - press + Mask or + Shape' }));
+  rows.push(el('div', { class: 'fxhead', text: 'Shapes' }));
+  if (!project.masks.length) rows.push(el('div', { class: 'hint', text: 'none \u2014 press + Shape, or turn a surface into one' }));
   project.masks.forEach((o, i) => rows.push(layerRow(o, 'mask', i, project.masks)));
-  rows.push(el('div', { class: 'row', style: 'margin-top:4px' }, [
-    el('button', { class: 'btn sm grow', text: 'All masks on', onclick: () => { project.masks.forEach((m) => (m.enabled = true)); pushProject(true); buildInspector(); } }),
+  if (project.masks.length) rows.push(el('div', { class: 'row', style: 'margin-top:4px' }, [
+    el('button', { class: 'btn sm grow', text: 'All shapes on', onclick: () => { project.masks.forEach((m) => (m.enabled = true)); pushProject(true); buildInspector(); } }),
     el('button', { class: 'btn sm grow', text: 'All off', onclick: () => { project.masks.forEach((m) => (m.enabled = false)); pushProject(true); buildInspector(); } }),
   ]));
-  return section('Layers', rows);
+  return section('Surfaces & shapes', rows);
+}
+
+// ------------------------------------------------------------------- maps --
+// A project holds several maps; each output shows one of them.
+function editMap(id) {
+  project.mapId = id;
+  ensureMaps(project);
+  stage.select(null, null);
+  pushProject(true);
+  buildInspector();
+}
+function freshIds(map) {
+  for (const sf of map.surfaces) sf.id = uid('surf');
+  for (const m of map.masks) m.id = uid('mask');
+  return map;
+}
+function mapsSection() {
+  const maps = project.maps;
+  const rows = [];
+  rows.push(el('div', { class: 'hint', text: 'A map is one arrangement of surfaces and shapes. Keep one per wall, or several versions of the same wall, and give each output the one it shows.' }));
+  const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px' });
+  const pid = mapIdFor(project, S.outputs, 'projector'), tid = mapIdFor(project, S.outputs, 'tv');
+  maps.forEach((m, i) => {
+    const on = m.id === project.mapId;
+    const tags = [];
+    if (m.id === pid) tags.push('projector');
+    if (m.id === tid) tags.push('TV');
+    const row = el('div', { class: 'mapRow' + (on ? ' on' : ''), title: `${m.surfaces.length} surface${m.surfaces.length === 1 ? '' : 's'}, ${m.masks.length} shape${m.masks.length === 1 ? '' : 's'}` }, [
+      el('span', { class: 'nm', text: m.name }),
+      ...tags.map((t) => el('span', { class: 'tag', text: t, title: 'Shown on the ' + t })),
+      el('span', { class: 'ar', text: '\u270E', title: 'Rename', onclick: async (e) => {
+        e.stopPropagation();
+        const n = await promptModal('Name this map', m.name);
+        if (n && n.trim()) { m.name = n.trim(); pushProject(true); buildInspector(); }
+      } }),
+      el('span', { class: 'ar', text: '\u2398', title: 'Duplicate', onclick: (e) => {
+        e.stopPropagation();
+        const copy = freshIds(JSON.parse(JSON.stringify(m)));
+        copy.id = uid('map'); copy.name = m.name + ' copy';
+        maps.splice(i + 1, 0, copy);
+        editMap(copy.id);
+      } }),
+      el('span', { class: 'ar', text: '\u2715', title: 'Delete', onclick: (e) => {
+        e.stopPropagation();
+        if (maps.length < 2) { toast('Keep at least one map'); return; }
+        maps.splice(i, 1);
+        editMap(maps[Math.max(0, i - 1)].id);
+      } }),
+    ]);
+    row.onclick = () => editMap(m.id);
+    list.appendChild(row);
+  });
+  rows.push(list);
+  rows.push(el('div', { class: 'row' }, [
+    el('button', { class: 'btn sm grow', text: '+ New map', onclick: () => {
+      const m = defaultMap({ name: 'Map ' + (maps.length + 1) });
+      maps.push(m); editMap(m.id);
+    } }),
+    el('button', { class: 'btn sm grow', text: '+ Empty map', onclick: () => {
+      const m = defaultMap({ name: 'Map ' + (maps.length + 1), surfaces: [] });
+      maps.push(m); editMap(m.id);
+    } }),
+  ]));
+  rows.push(el('div', { class: 'fxhead', text: 'Shown on' }));
+  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'Projector' }), mapSelectRow('projector').lastChild]));
+  rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'TV' }), mapSelectRow('tv').lastChild]));
+  rows.push(el('div', { class: 'hint', text: 'The preview beside the other views shows the wall it is switched to; here you edit the map picked above, whichever wall it is on.' }));
+  return section('Maps', rows);
+}
+
+// a surface becomes a shape of the same outline, and back
+function surfaceToShape(o) {
+  const i = project.surfaces.indexOf(o);
+  if (i < 0) return;
+  const c = Mesh.corners(o.mesh);
+  const m = defaultMask({ name: o.name, points: c.map((q) => [q[0], q[1]]) });
+  project.masks.push(m);
+  project.surfaces.splice(i, 1);
+  stage.select('mask', m.id);
+  pushProject(true); buildInspector();
+  toast(o.name + ' is now a shape: it stays black and the effects treat it as solid', 2200);
+}
+function shapeToSurface(m) {
+  const i = project.masks.indexOf(m);
+  if (i < 0) return;
+  let pts;
+  if (m.points.length === 4) pts = [m.points[0], m.points[1], m.points[3], m.points[2]];
+  else {
+    const xs = m.points.map((q) => q[0]), ys = m.points.map((q) => q[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    pts = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
+  }
+  const sf = defaultSurface({ name: m.name, mesh: { cols: 1, rows: 1, pts: pts.map((q) => [q[0], q[1]]) } });
+  project.surfaces.push(sf);
+  project.masks.splice(i, 1);
+  stage.select('surface', sf.id);
+  pushProject(true); buildInspector();
+  toast(m.name + ' is now a surface: the picture goes there', 2200);
 }
 
 // the emoji the two emoji scenes draw from; applied when the field is left
@@ -1379,18 +1629,86 @@ function emojiRow() {
 
 function visualsSection() {
   const cfg = visualsCfg;
-  const now = el('div', { class: 'hint' });
+  const sceneName = (sc) => (VISUAL_SCENES.find((x) => x[0] === sc) || [sc, sc])[1];
+  // what the wall shows right now, and why
+  const nowLine = el('div', { class: 'visNow' });
+  const why = el('div', { class: 'hint' });
   const showNow = () => {
-    const on = visualsOn(S);
+    const mode = visualsMode();
+    const pattern = !!(project.global.testPattern && project.global.testPattern !== 'off');
+    const on = !pattern && visualsOn(S);
     const sc = visualsHost.scene;
-    const name = sc ? (VISUAL_SCENES.find((x) => x[0] === sc) || [sc, sc])[1] : '';
-    const txt = !on ? 'The video is showing.' : visualsHost.error ? visualsHost.error
-      : 'Showing: ' + (name || '…') + (S.settings.visuals ? '' : '  (this video only)');
-    if (now.textContent !== txt) now.textContent = txt;
+    const txt = pattern ? 'A test pattern' : !on ? 'The video' : visualsHost.error ? 'Visuals failed' : 'Visuals \u00b7 ' + (sc ? sceneName(sc) : '\u2026');
+    const reason = pattern ? 'A test pattern is up (Map view). Set it to Off to see the picture again.'
+      : on && visualsHost.error ? visualsHost.error
+      : mode === 'music' ? 'An Apple Music song has no picture, so visuals stand in for it.'
+      : mode === 'always' ? 'Visuals replace every video.'
+      : mode === 'track' ? 'This track is marked to play with visuals. Other tracks show their video.'
+      : 'Visuals are off for this track.';
+    if (nowLine.textContent !== txt) nowLine.textContent = txt;
+    if (why.textContent !== reason) why.textContent = reason;
+    nowLine.classList.toggle('vis', on);
   };
   frameUpdaters.push(showNow); showNow();
-  const thisVideo = toggle('Always for this video', () => hidesVideo(videoKey(S.transport.source)),
-    (v) => setHidesVideo(videoKey(S.transport.source), v), { push: false, title: 'Remember this video: it plays with visuals from now on (H)' });
+
+  // whose settings the controls below edit
+  const scope = el('div', { class: 'hint' });
+  const showScope = () => {
+    const own = hasVisualsOverride(S);
+    const t = S.transport.source && S.transport.source.title;
+    scope.textContent = own ? 'The settings below belong to this track' + (t ? ' (' + t + ')' : '') + '; every other track uses the shared ones.'
+      : 'The settings below are shared by every track' + (t ? '. Switch on "Remember for this track" to tune ' + t + ' on its own.' : '.');
+  };
+  updaters.push(showScope); showScope();
+
+  const held = el('div', { class: 'hint' });
+  const showHeld = () => {
+    const c = cfg();
+    const sc = c.scene;
+    const when = c.changeOn === 'seconds' ? 'every ' + c.every + ' s' : 'every ' + (c.everyBars || 8) + ' bars';
+    held.textContent = sc && sc !== 'auto'
+      ? 'Holding ' + sceneName(sc) + '. Click Mix in the catalogue to let the scenes change again.'
+      : 'Mixing every scene, a new one ' + when + '. Click a scene to hold it.';
+  };
+  updaters.push(showHeld); showHeld();
+
+  // tempo: what the clock is locked to
+  const tempoLine = el('div', { class: 'hint mono' });
+  const showTempo = () => {
+    const c = cfg();
+    const v = visualsHost.visuals;
+    const t = v && v.tempo ? v.tempo : null;
+    const f = fxHost.features();
+    let txt;
+    if (c.bpm > 0) txt = 'Set by hand: ' + Math.round(c.bpm) + ' bpm';
+    else if (t && t.source === 'auto' && t.bpm) txt = 'Detected ' + Math.round(t.bpm) + ' bpm' + (t.locked ? ', locked' : ', settling\u2026');
+    else if (f.bpm) txt = 'Detected ' + f.bpm + ' bpm';
+    else txt = 'No tempo yet \u2014 waiting for the beat';
+    if (tempoLine.textContent !== txt) tempoLine.textContent = txt;
+  };
+  frameUpdaters.push(showTempo); showTempo();
+  // a tempo set by hand: a number, or tapped in
+  const bpmInp = el('input', { type: 'number', min: 40, max: 220, step: 1, placeholder: 'auto' });
+  const showBpm = () => { if (document.activeElement !== bpmInp) bpmInp.value = cfg().bpm > 0 ? Math.round(cfg().bpm) : ''; };
+  bpmInp.onchange = () => { const v = Number(bpmInp.value); patchVisualsCfg({ bpm: v >= 40 && v <= 220 ? v : 0 }); };
+  bpmInp.onkeydown = (e) => e.stopPropagation();
+  updaters.push(showBpm); showBpm();
+  const taps = [];
+  const tapBtn = el('button', { class: 'btn sm', text: 'Tap', title: 'Click along with the beat (four taps or more)', onclick: () => {
+    const now = performance.now();
+    if (taps.length && now - taps[taps.length - 1] > 2500) taps.length = 0;
+    taps.push(now);
+    while (taps.length > 12) taps.shift();
+    if (taps.length < 4) { tapBtn.textContent = 'Tap ' + taps.length + '\u2026'; return; }
+    const gaps = []; for (let i = 1; i < taps.length; i++) gaps.push(taps[i] - taps[i - 1]);
+    gaps.sort((a, b) => a - b);
+    const bpm = Math.round(60000 / gaps[gaps.length >> 1]);
+    tapBtn.textContent = 'Tap';
+    patchVisualsCfg({ bpm: Math.max(40, Math.min(220, bpm)) });
+    toast('Tempo set to ' + bpm + ' bpm', 1400);
+  } });
+  const autoBtn = el('button', { class: 'btn sm', text: 'Auto', title: 'Follow the detected tempo again', onclick: () => { taps.length = 0; patchVisualsCfg({ bpm: 0 }); } });
+
   // settings that belong to one scene show only while that scene is chosen
   const forScene = (test, rows) => {
     const box = el('div', { class: 'visFor' }, rows);
@@ -1398,13 +1716,49 @@ function visualsSection() {
     updaters.push(show); show();
     return box;
   };
+  const whenChange = (test, rows) => {
+    const box = el('div', { class: 'visFor' }, rows);
+    const show = () => { box.hidden = !test(cfg()); };
+    updaters.push(show); show();
+    return box;
+  };
+  const n2 = (v) => Number(v).toFixed(2);
   return section('Visuals', [
+    el('div', { class: 'hint', text: 'On the wall now' }),
+    nowLine,
+    why,
+    visModeSeg(),
+    el('div', { class: 'hint', text: 'Video shows the film. Visuals \u00b7 track remembers the current video and plays visuals every time it comes up (H, or \u25D0 on any playlist item). Visuals \u00b7 all replaces every video. The mapping, the shapes, the TV and the effects stack all apply on top.' }),
+
+    el('div', { class: 'fxhead', text: 'Settings for' }),
     el('div', { class: 'row' }, [
-      toggle('Visuals instead of the video', () => !!S.settings.visuals, (v) => api.patchState({ settings: { visuals: v } }), { push: false }),
+      toggle('Remember for this track', () => hasVisualsOverride(S), (v) => setVisualsOverride(v), { push: false, title: 'Keep a separate set of the settings below for this track' }),
     ]),
-    el('div', { class: 'row' }, [thisVideo]),
-    now,
-    slider('Change', () => cfg().every, (v) => patchVisualsCfg({ every: v }), { min: 10, max: 120, step: 5, fmt: (v) => 'every ' + v + ' s', push: false }),
+    scope,
+
+    el('div', { class: 'fxhead', text: 'Tempo' }),
+    tempoLine,
+    el('div', { class: 'ctl wide' }, [el('label', { text: 'BPM' }), el('div', { class: 'row nowrap' }, [bpmInp, tapBtn, autoBtn])]),
+    selectRow('Motion', [['beat', 'Locked to the beat'], ['free', 'Free, pushed by loudness']], () => cfg().sync || 'beat', (v) => patchVisualsCfg({ sync: v })),
+    el('div', { class: 'hint', text: 'Locked, every scene steps with the beat and the tempo is read from the music; set the BPM by hand or tap it when the detector gets a track wrong.' }),
+
+    el('div', { class: 'fxhead', text: 'Feel' }),
+    slider('Speed', () => cfg().speed, (v) => patchVisualsCfg({ speed: v }), { min: 0.2, max: 3, step: 0.05, fmt: (v) => n2(v) + 'x', push: false }),
+    slider('Responds', () => cfg().react, (v) => patchVisualsCfg({ react: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false }),
+    slider('Beat kick', () => cfg().kick == null ? 1 : cfg().kick, (v) => patchVisualsCfg({ kick: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false }),
+    slider('Smoothing', () => cfg().smooth == null ? 0.3 : cfg().smooth, (v) => patchVisualsCfg({ smooth: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
+    slider('Brightness', () => cfg().gain == null ? 1 : cfg().gain, (v) => patchVisualsCfg({ gain: v }), { min: 0.3, max: 2, step: 0.05, fmt: pc, push: false }),
+    el('div', { class: 'hint', text: 'Responds is how much the loudness and the bands drive the picture; Beat kick how hard each beat hits; Smoothing steadies a jittery track.' }),
+
+    el('div', { class: 'fxhead', text: 'Scenes' }),
+    held,
+    selectRow('Change', [['bars', 'On the bar'], ['seconds', 'On a timer']], () => cfg().changeOn || 'bars', (v) => patchVisualsCfg({ changeOn: v })),
+    whenChange((c) => (c.changeOn || 'bars') === 'bars', [
+      selectRow('Every', [['4', '4 bars'], ['8', '8 bars'], ['16', '16 bars'], ['32', '32 bars']], () => String(cfg().everyBars || 8), (v) => patchVisualsCfg({ everyBars: Number(v) })),
+    ]),
+    whenChange((c) => c.changeOn === 'seconds', [
+      slider('Every', () => cfg().every, (v) => patchVisualsCfg({ every: v }), { min: 10, max: 120, step: 5, fmt: (v) => v + ' s', push: false }),
+    ]),
     selectRow('Colours', VISUAL_PALETTE_NAMES, () => cfg().palette, (v) => patchVisualsCfg({ palette: v })),
     forScene((sc) => sc === 'emoji' || sc === 'emojiwall', [emojiRow()]),
     forScene((sc) => sc === 'train', [
@@ -1413,9 +1767,13 @@ function visualsSection() {
       slider('Haze', () => cfg().haze, (v) => patchVisualsCfg({ haze: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
       slider('Line height', () => cfg().ride, (v) => patchVisualsCfg({ ride: v }), { min: 0, max: 1, step: 0.05, fmt: pc, push: false }),
     ]),
-    slider('Speed', () => cfg().speed, (v) => patchVisualsCfg({ speed: v }), { min: 0.2, max: 3, step: 0.05, fmt: (v) => Number(v).toFixed(2) + 'x', push: false }),
-    slider('Music', () => cfg().react, (v) => patchVisualsCfg({ react: v }), { min: 0, max: 2, step: 0.05, fmt: pc, push: false }),
-    el('div', { class: 'hint', text: 'For music videos that are not worth watching: the picture is replaced by generated scenes — tunnels, fractals, lasers, emoji — that move with the sound, while the video keeps playing underneath for its audio. Everything else still applies — the mapping, the masks, the TV, and any effects you stack on top. Press H to hide the video that is playing; ◐ in the playlist does the same for any track.' }),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm grow', text: 'Reset these settings', onclick: () => {
+        const key = videoKey(S.transport.source);
+        if (key && hasVisualsOverride(S)) { const by = { ...(S.settings.visualsByKey || {}) }; by[key] = {}; api.patchState({ settings: { visualsByKey: by } }); }
+        else api.patchState({ settings: { visualsCfg: defaultVisualsCfg() } });
+      } }),
+    ]),
   ]);
 }
 
@@ -1430,7 +1788,7 @@ function lookSection() {
     if (motion.textContent !== txt) motion.textContent = txt;
   };
   frameUpdaters.push(showMotion); showMotion();
-  return section('Look', [
+  return section('Picture', [
     slider('Brightness', () => project.global.brightness, (v) => (project.global.brightness = v), { min: 0, max: 1, fmt: pc }),
     el('div', { class: 'row' }, [
       toggle('Blackout', () => project.global.blackout, (v) => (project.global.blackout = v)),
@@ -1448,19 +1806,19 @@ function presetSection() {
   const two = twoWallControls() || [];
   return section('Presets', [
     ...two,
-    el('div', { class: 'hint', text: 'Two-wall setup: splits the video across a main wall and a side wall, each independently warped, with a soft seam.' }),
+    el('div', { class: 'hint', text: 'Starting points for this map. Two walls: the video split across a main wall and a side wall, each warped on its own, with a soft seam.' }),
     el('button', { class: 'btn', text: 'Set up two walls', onclick: twoWallPreset }),
     el('button', { class: 'btn', text: 'One wall, full output', onclick: () => {
       project.surfaces = [defaultSurface({ name: 'Wall', mesh: { cols: 1, rows: 1, pts: [[0, 0], [1, 0], [0, 1], [1, 1]] } })];
       stage.select('surface', project.surfaces[0].id);
       pushProject(true); buildInspector();
     } }),
-    el('div', { class: 'hint', text: 'Multiple areas' }),
-    el('button', { class: 'btn', text: 'Spread video across all areas', onclick: spreadAcrossAreas }),
-    el('button', { class: 'btn', text: 'Same video in every area', onclick: () => {
+    el('div', { class: 'hint', text: 'Several surfaces, one picture' }),
+    el('button', { class: 'btn', text: 'Spread the video across all surfaces', onclick: spreadAcrossAreas }),
+    el('button', { class: 'btn', text: 'Whole video on every surface', onclick: () => {
       project.surfaces.forEach((s) => (s.src = { x: 0, y: 0, w: 1, h: 1 }));
       pushProject(true); buildInspector();
-      toast('Every area now shows the whole video.');
+      toast('Every surface now shows the whole video.');
     } }),
     el('div', { class: 'row' }, [
       el('button', { class: 'btn grow', text: 'Save mapping', onclick: () => api.saveProject(false).then((p) => p && toast('Saved ' + p)) }),
@@ -1519,7 +1877,7 @@ function twoWallControls() {
 // output, left to right - the starting point for one picture across many walls.
 function spreadAcrossAreas() {
   const list = project.surfaces.filter((s) => s.enabled);
-  if (list.length < 2) return toast('Draw at least two areas first');
+  if (list.length < 2) return toast('Draw at least two surfaces first');
   const info = list.map((s) => {
     const c = Mesh.corners(s.mesh);
     const w = Math.abs(((c[1][0] - c[0][0]) + (c[2][0] - c[3][0])) / 2);
@@ -1535,13 +1893,13 @@ function spreadAcrossAreas() {
   }
   pushProject(true);
   buildInspector();
-  toast('Video spread across ' + info.length + ' areas by width. Fine-tune with each area\'s source region.');
+  toast('Video spread across ' + info.length + ' surfaces by width. Fine-tune each surface\'s region of the picture.');
 }
 
 function helpSection() {
   return section('Keys', [el('div', {
     class: 'hint', html: `
-      <b>V</b> select &nbsp; <b>S</b> new area &nbsp; <b>M</b> mask rect &nbsp; <b>P</b> mask shape<br>
+      <b>V</b> select &nbsp; <b>S</b> new surface &nbsp; <b>M</b> shape (rectangle) &nbsp; <b>P</b> shape (draw)<br>
       <b>Space</b> play/pause &nbsp; <b>B</b> blackout &nbsp; <b>G</b> wall guides<br>
       <b>Arrows</b> nudge 1px, <b>Shift</b> 10px &nbsp; <b>Backspace</b> delete<br>
       <b>Cmd+scroll</b> zoom &nbsp; <b>Alt+drag</b> pan &nbsp; <b>Cmd+drag</b> ignore snapping<br>
@@ -1550,9 +1908,10 @@ function helpSection() {
 }
 
 // ------------------------------------------------------------------- modal --
-function promptModal(label) {
+function promptModal(label, value) {
   return new Promise((resolve) => {
-    const inp = el('input', { type: 'text', placeholder: 'https://…', style: 'width:100%' });
+    const inp = el('input', { type: 'text', placeholder: value == null ? 'https://…' : '', style: 'width:100%' });
+    if (value != null) inp.value = value;
     const back = el('div', {
       style: `position:fixed;inset:0;z-index:100;background:#000a;display:grid;place-items:center`,
     }, [el('div', {
@@ -1562,7 +1921,7 @@ function promptModal(label) {
       inp,
       el('div', { class: 'row', style: 'justify-content:flex-end' }, [
         el('button', { class: 'btn', text: 'Cancel', onclick: () => { back.remove(); resolve(null); } }),
-        el('button', { class: 'btn on', text: 'Add', onclick: () => { back.remove(); resolve(inp.value); } }),
+        el('button', { class: 'btn on', text: value == null ? 'Add' : 'OK', onclick: () => { back.remove(); resolve(inp.value); } }),
       ]),
     ])]);
     inp.addEventListener('keydown', (e) => {
@@ -1577,6 +1936,7 @@ function promptModal(label) {
 
 // ---------------------------------------------------------------- keyboard --
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') soundMeter.close();
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
   if (stage.key(e)) { e.preventDefault(); return; }
   const k = e.key.toLowerCase();
@@ -1589,7 +1949,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (k === ' ') { api.cmd('toggle'); e.preventDefault(); return; }
   if (k === 'b') { project.global.blackout = !project.global.blackout; pushProject(true); e.preventDefault(); return; }
-  if (k === 'h') { toggleThisVideo(); e.preventDefault(); return; }
+  if (k === 'h') { setVisualsMode(visualsMode() === 'track' ? 'video' : 'track'); e.preventDefault(); return; }
   if (k === 'g') { project.global.showGuides = !project.global.showGuides; pushProject(true); e.preventDefault(); return; }
   if (k === 'f' && !e.metaKey) {
     ensureFx(project);
@@ -1651,7 +2011,7 @@ function applyState(s) {
     const [w, h] = outputSize();
     project.global.refW = w; project.global.refH = h;
   }
-  ensureFx(project);
+  ensureProject(project);
   const setKey = JSON.stringify([s.settings && s.settings.fxSet, s.settings && s.settings.fxSets]);
   if (setKey !== applyState.setKey) { applyState.setKey = setKey; if (!first) { buildInspector(); api.remoteSend(null, remote.catalogMsg()); } }
   remote.applyState(s);
@@ -1669,10 +2029,7 @@ function applyState(s) {
 function syncTopSideButtons() {
   const aiOn = !!(S.settings.ai && S.settings.ai.steer && S.settings.ai.enabled);
   $('#tAi input').checked = aiOn;
-  $('#tVis input').checked = !!S.settings.visuals;
-  const hid = hidesVideo(videoKey(S.transport.source));
-  $('#tHide').classList.toggle('on', hid);
-  $('#tHide').title = hid ? 'This video is replaced by visuals. Click to show it again (H)' : 'Replace this video with visuals, every time it plays (H)';
+  syncVisSegs();
   $('#tAi').classList.toggle('busy', !!ai.busy);
   $('#oProj input').checked = !!S.outputs.projector.enabled;
   $('#oTv input').checked = !!S.outputs.tv.enabled;
@@ -1693,7 +2050,8 @@ function updateTop() {
   const item = S.playlist.items[S.playlist.index];
   $('#nowTitle').textContent = t.error ? t.error : (t.source?.title || item?.title || '');
   $('#nowTitle').style.color = t.error ? 'var(--mask)' : '';
-  $('#dragInfo').textContent = `${S.playlist.items.length} in playlist  |  ${project.surfaces.length} areas, ${project.masks.length} masks`;
+  const mp = project.maps.find((m) => m.id === project.mapId);
+  $('#dragInfo').textContent = `${S.playlist.items.length} in playlist  |  map "${mp ? mp.name : ''}": ${project.surfaces.length} surfaces, ${project.masks.length} shapes`;
   $('#tRate').value = String(t.rate);
   if (document.activeElement !== $('#tVol')) $('#tVol').value = Math.round((t.volume ?? 1) * 100);
   syncTopSideButtons();
@@ -1719,7 +2077,7 @@ window.__player = player;
 window.__dev = {
   get project() { return project; },
   get state() { return S; },
-  stage, camera, remote, player, fxHost, ai, peopleView, depth,
+  stage, camera, remote, player, fxHost, ai, peopleView, depth, audition,
   fxAction,
   push: pushProject,
   rebuild: buildInspector,
@@ -1750,7 +2108,7 @@ const visualsBrowser = (() => {
     const img = id === 'auto' ? el('div', { class: 'fxNoThumb', text: '\u2728' })
       : el('img', { src: '/renderer/control/visual-thumbs/' + id + '.jpg', alt: label, loading: 'lazy' });
     const c = el('button', { class: 'fxCard visScene', title: label }, [
-      el('div', { class: 'fxThumb' }, [img, cv, el('span', { class: 'fxBadge now', text: 'showing' }), el('span', { class: 'fxBadge sel', text: 'chosen' })]),
+      el('div', { class: 'fxThumb' }, [img, cv, el('span', { class: 'fxBadge now', text: 'on the wall' }), el('span', { class: 'fxBadge sel', text: id === 'auto' ? 'mixing' : 'held' })]),
       el('div', { class: 'fxCardBody' }, [el('div', { class: 'fxCardName', text: label }), hint ? el('div', { class: 'fxCardHint', text: hint }) : null]),
     ]);
     c.onclick = () => { patchVisualsCfg({ scene: id }); toast(id === 'auto' ? 'Mixing every scene' : 'Holding ' + label); };
@@ -1762,7 +2120,7 @@ const visualsBrowser = (() => {
   root.innerHTML = '';
   root.appendChild(el('div', { class: 'fxGroupHead' }, [
     el('h2', { text: 'Visuals' }),
-    el('div', { class: 'hint', text: 'Generated scenes that take the place of the picture and move with the sound. Click one to hold it; Mix walks through them all, changing every few seconds. Hover a card to see it live to the music that is playing.' }),
+    el('div', { class: 'hint', text: 'Generated scenes that take the place of the picture and move with the sound. Click one to hold it; Mix walks through them all, changing every few seconds. Hover a card to see it live to the music that is playing. Whether they show at all is the Video / Visuals choice on the left.' }),
     el('span', { class: 'count', text: VISUAL_SCENES.length + ' scenes' }),
   ]));
   const grid = el('div', { class: 'fxGrid' });
@@ -1793,6 +2151,101 @@ const visualsBrowser = (() => {
   return { frame };
 })();
 
+// ------------------------------------------------------------------- sound --
+// The beat meter in the top bar shows what the analyser hears right now, from
+// whichever window (or the Music app) carries the sound, so it is plain at a
+// glance that the effects are getting the beat. Click it for the full meter
+// and the sound settings.
+const soundMeter = (() => {
+  const btn = $('#tSound');
+  const bars = [...btn.querySelectorAll('.sBars i')];
+  const dot = btn.querySelector('.sBeat');
+  const txt = btn.querySelector('.sTxt');
+  const KEYS = ['bass', 'low', 'mid', 'high', 'air'];
+  const METERS = [['level', 'LVL'], ['bass', 'BAS'], ['low', 'LOW'], ['mid', 'MID'], ['high', 'HI'], ['air', 'AIR']];
+  let pop = null, lastShort = '', signalAt = 0;
+  const source = () => {
+    if (isMusicSource()) return 'the Music app';
+    const out = S.audioOut || 'control';
+    return out === 'control' ? 'the video in this window' : out === 'none' ? 'nothing' : 'the ' + out + ' window';
+  };
+  const status = () => {
+    const f = fxHost.features(), t = S.transport;
+    const react = !!(project.fx && project.fx.audio && project.fx.audio.enabled);
+    if (!t.source) return { short: 'no media', long: 'Nothing is playing.', live: false, react };
+    if (!t.playing) return { short: 'paused', long: 'Paused. The meter moves while the sound plays.', live: false, react };
+    // the analyser reports "live" as soon as it is wired up; a signal is sound actually arriving
+    if (f.live && (f.level > 0.03 || f.bass > 0.03 || f.high > 0.03)) signalAt = performance.now();
+    if (f.live && performance.now() - signalAt < 1500) {
+      return { short: (f.bpm || '--') + ' bpm', live: true, react,
+        long: `Listening to ${source()}: ${f.bpm || '--'} bpm.` + (react ? ' The effects react to it.' : ' The effects are not reacting yet: turn on "React to sound" below.') };
+    }
+    const why = S.audioOut === 'none' ? 'Sound is muted in Setup \u2192 Output \u2192 Audio from, so there is nothing to analyse.'
+      : t.muted ? 'The player is muted, so nothing reaches the analyser.'
+      : isMusicSource() ? 'Nothing is arriving from the Music app yet. The tap starts with the song.'
+      : f.live ? `Silence from ${source()} right now.`
+      : `No sound is reaching the analyser from ${source()}. Check Setup \u2192 Output \u2192 Audio from.`;
+    return { short: f.live ? 'silent' : 'no signal', long: why, live: false, react };
+  };
+  const frame = () => {
+    if (!S) return;
+    const f = fxHost.features();
+    const st = status();
+    for (let i = 0; i < bars.length; i++) bars[i].style.height = Math.round(4 + (f[KEYS[i]] || 0) * 96) + '%';
+    const b = f.beat || 0;
+    dot.style.transform = 'scale(' + (0.55 + 0.55 * b).toFixed(3) + ')';
+    dot.style.opacity = (0.3 + 0.7 * b).toFixed(3);
+    btn.classList.toggle('live', st.live);
+    btn.classList.toggle('react', st.react);
+    if (st.short !== lastShort) { lastShort = st.short; txt.textContent = st.short; btn.title = st.long; }
+  };
+  const onDoc = (e) => { if (pop && !pop.contains(e.target) && !btn.contains(e.target)) close(); };
+  const close = () => {
+    if (!pop) return;
+    pop.remove(); pop = null;
+    group('pop').dirty = true;
+    document.removeEventListener('pointerdown', onDoc);
+  };
+  const open = () => {
+    if (pop) { close(); return; }
+    const a = ensureFx(project).audio;
+    buildGroup('pop', () => {
+      const big = METERS.map(([k, label]) => {
+        const fill = el('i', {});
+        return { k, fill, bar: el('div', { class: 'bar' + (k === 'level' ? '' : '') }, [fill, el('span', { class: 'lbl', text: label })]) };
+      });
+      const bdot = el('div', { class: 'beatdot', title: 'Beat' });
+      const long = el('div', { class: 'hint' });
+      pop = el('div', { class: 'soundPop' }, [
+        el('div', { class: 'soundPopHead' }, [el('b', { text: 'Sound' }), el('span', { class: 'grow' }), el('button', { class: 'btn icon sm', text: '\u2715', onclick: close })]),
+        el('div', { class: 'meter big' }, [...big.map((m) => m.bar), bdot]),
+        long,
+        el('div', { class: 'row' }, [toggle('React to sound', () => !!a.enabled, (v) => (a.enabled = v), { title: 'Let the effect layers act on the sound (links are set per layer in the Effects view)' })]),
+        slider('Sensitivity', () => a.sensitivity, (v) => (a.sensitivity = v), { min: 0.2, max: 5, fmt: (v) => Number(v).toFixed(2) }),
+        slider('Beat', () => a.beatThreshold, (v) => (a.beatThreshold = v), { min: 0.4, max: 4, fmt: (v) => Number(v).toFixed(2) }),
+        selectRow('Audio from',
+          [['auto', 'Auto (first open output)'], ['tv', 'TV'], ['projector', 'Projector'], ['control', 'This window'], ['none', 'Muted']],
+          () => S.settings.audioTarget || 'auto', (v) => api.patchState({ settings: { audioTarget: v } })),
+        el('div', { class: 'hint', text: 'The beat is read in the window that plays the sound (or from the Music app for Apple Music) and shared with every wall. Lower Beat to catch softer beats; raise it if it fires on every hi-hat.' }),
+      ]);
+      frameUpdaters.push(() => {
+        const f = fxHost.features(), st = status();
+        for (const m of big) m.fill.style.height = Math.round((f[m.k] || 0) * 100) + '%';
+        bdot.classList.toggle('on', (f.beat || 0) > 0.35);
+        if (long.textContent !== st.long) long.textContent = st.long;
+        long.style.color = st.live ? '' : 'var(--warn)';
+      });
+    });
+    document.body.appendChild(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    pop.style.top = (r.bottom + 6) + 'px';
+    setTimeout(() => document.addEventListener('pointerdown', onDoc), 0);
+  };
+  btn.onclick = open;
+  return { frame, close };
+})();
+
 // -------------------------------------------------------------------- loop --
 let lastTitleTime = -1;
 function frame() {
@@ -1820,32 +2273,36 @@ function frame() {
     }
     stage.previewDim = 1;
     pumpInteractors();
-    const tvPreview = previewWall === 'tv';
-    const tvFill = tvPreview && (S.outputs.tv.mode || 'fill') !== 'mapped';
-    fxHost.frame(project, {
+    const wall = stageWall();
+    const wp = wall.project;
+    const fill = !wall.mapped;
+    const tvPreview = currentView !== 'stage' && previewWall === 'tv';
+    fxHost.frame(wp, {
       playing: !!S.transport.playing,
       audioEl: player.separateAudio ? player.audio : player.video,
       ownsAudio: S.audioOut === 'control',
       feed: isMusicSource() ? musicFeed : null,
       wall: tvPreview ? 'tv' : 'projector',
-      off: tvFill && S.outputs.tv.fx === false,
-      aspect: tvFill ? stage.glc.height / Math.max(1, stage.glc.width) : undefined,
-      shapes: !tvFill,
+      off: tvPreview && fill && S.outputs.tv.fx === false,
+      aspect: fill ? stage.glc.height / Math.max(1, stage.glc.width) : undefined,
+      shapes: !fill,
       characters: activeCharacters(S),
-      listen: vis,
+      sinkId: S.audioOut === 'control' ? S.settings.audioSinkId || '' : '',
     });
-    visualsHost.frame(vis, {
+    const visOpts = {
       time: targetTime(S.transport),
       audio: fxHost.features(),
-      cfg: S.settings.visualsCfg,
+      cfg: visualsCfg(),
       key: S.transport.source && S.transport.source.key,
       playing: !!S.transport.playing,
-    });
+    };
+    visualsHost.frame(vis, visOpts);
+    surfaceVisuals.frame(visOpts);
     if (fxHost.outgoingAudio && performance.now() - lastAudioSend > 33) {
       lastAudioSend = performance.now();
       api.fxAudio(fxHost.outgoingAudio);
     }
-    stage.engine.render(project, { mode: tvFill ? 'fill' : 'mapped', fit: S.settings.fitMode || 'contain', dimOverride: 1, blend: player.blendFactor(project.global.smoothMotion) });
+    stage.engine.render(wp, { mode: fill ? 'fill' : 'mapped', fit: S.settings.fitMode || 'contain', dimOverride: 1, blend: player.blendFactor(project.global.smoothMotion) });
     stage.draw();
     if (project.fx?.interact?.cameraDebug && project.fx.interact.camera) {
       const c = $('#ovc'), dpr = window.devicePixelRatio || 1;
@@ -1856,6 +2313,8 @@ function frame() {
     ai.frame();
     depth.frame();
     visualsBrowser.frame();
+    audition.frame();
+    soundMeter.frame();
 
     const t = S.transport;
     const now = targetTime(t);
@@ -1866,7 +2325,7 @@ function frame() {
     }
     if (camera.live && camera.homography) camera.applyWarp();
     if (srcMapWidget.redraw && stage.sel?.type === 'surface') srcMapWidget.redraw();
-    for (const f of frameUpdaters) { try { f(); } catch {} }
+    for (const g of Object.values(GROUPS)) if (!g.dirty) for (const f of g.fr) { try { f(); } catch {} }
   }
   requestAnimationFrame(frame);
 }

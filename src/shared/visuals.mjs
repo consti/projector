@@ -115,8 +115,18 @@ const DAY_AT = { dawn: 0.262, day: 0.45, sunset: 0.735, dusk: 0.775, night: 0 };
 const AUTO_DAYTIMES = ['night', 'dusk', 'sunset', 'night', 'day', 'dawn'];
 
 export function defaultVisualsCfg() {
-  return { scene: 'auto', every: 30, speed: 1, react: 1, palette: 'auto', emoji: DEFAULT_VISUAL_EMOJI,
-    city: 'auto', daytime: 'auto', haze: 0.35, ride: 0.3 };
+  return {
+    scene: 'auto', every: 30, speed: 1, react: 1, palette: 'auto', emoji: DEFAULT_VISUAL_EMOJI,
+    city: 'auto', daytime: 'auto', haze: 0.35, ride: 0.3,
+    // tempo: 'beat' advances the scene per beat of the music, 'free' lets loudness push it along
+    sync: 'beat',
+    bpm: 0,              // 0 = the analyser's estimate; otherwise a fixed tempo, derived from the media clock
+    kick: 1,             // 0..2: how hard a beat hits (the pulse, flares, flashes)
+    smooth: 0.3,         // 0..1: smoothing of the levels before they reach the picture
+    gain: 1,             // 0.3..2: brightness of the generated picture
+    changeOn: 'bars',    // scene changes on bar boundaries ('bars') or on a timer ('seconds')
+    everyBars: 8,        // a bar is four beats
+  };
 }
 
 /** A stable identity for "this video", shared by playlist items, library entries and sources. */
@@ -145,8 +155,12 @@ precision highp float;
 in vec2 vUV;
 out vec4 o;
 uniform vec2 uRes;
-uniform float uFlow;       // audio-driven time: runs faster when the music is loud
-uniform float uBeats;      // beats counted so far
+uniform float uFlow;       // scene time: beat-locked, or pushed along by loudness
+uniform float uBeats;      // whole beats counted so far (changes exactly on the beat when locked)
+uniform float uBeatT;      // continuous beat time: one unit per beat (flow * 2 when there is no tempo)
+uniform float uBeatPh;     // where in the beat we are, 0 on the beat .. 1 just before the next
+uniform float uSync;       // 1 when the scene time is locked to the tempo
+uniform float uGain;       // brightness of the whole picture
 uniform float uLevel, uBass, uMid, uHigh, uBeat;
 uniform float uSpec[${SPECTRUM_N}];
 uniform vec3 uPa, uPb, uPc, uPd;
@@ -184,7 +198,7 @@ void main() {
   // to make +y point up the wall
   vec2 frag = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   vec2 p = (frag - 0.5 * uRes) / uRes.y;
-  vec3 c = max(scene(p), 0.0);
+  vec3 c = max(scene(p), 0.0) * uGain;
   c = c * (1.0 + c / 4.0) / (1.0 + c);           // soft shoulder, white at 2
   c += (hash12(frag + fract(uFlow) * 91.0) - 0.5) / 255.0;   // dither the gradients
   o = vec4(c, uAlpha);
@@ -201,7 +215,7 @@ vec3 scene(vec2 p) {
   float sides = 6.0;
   float hex = r * cos(PI / sides) / cos(mod(a + uFlow * 0.05, TAU / sides) - PI / sides);
   float rr = mix(r, hex, 0.5 + 0.5 * sin(uFlow * 0.07));
-  float z = 0.3 / max(rr, 1e-3) + uFlow * 0.9;
+  float z = 0.3 / max(rr, 1e-3) + uBeatT * 0.45;
   float u = a / TAU + z * 0.015 + uFlow * 0.01;
   float dz = abs(fract(z + 0.5) - 0.5);
   float du = abs(fract(u * sides * 2.0 + 0.5) - 0.5);
@@ -356,7 +370,7 @@ vec3 scene(vec2 p) {
     float sd = length(p - sc);
     vec3 sunc = mix(vec3(1.0, 0.9, 0.3), vec3(1.0, 0.2, 0.55), sat((sc.y + R - p.y) / (2.0 * R)));
     float below = sat((sc.y - p.y) / R);
-    float band = step(below * 0.55, fract((p.y - hz) * 22.0 - uFlow * 0.3));
+    float band = step(below * 0.55, fract((p.y - hz) * 22.0 - uBeatT * 0.25));
     float sun = smoothstep(R, R - 0.004, sd) * mix(1.0, band, step(0.001, below));
     col = mix(col, sunc, sun);
     col += sunc * 0.3 * exp(-max(sd - R, 0.0) * 7.0) * (0.5 + uBass);
@@ -369,7 +383,7 @@ vec3 scene(vec2 p) {
   } else {
     float y = hz - p.y;
     float z = 0.1 / y;
-    vec2 g = vec2(p.x * z * 1.6, z + uFlow * 0.6);
+    vec2 g = vec2(p.x * z * 1.6, z + uBeatT * 0.5);
     vec2 fw = fwidth(g);
     vec2 d = abs(fract(g + 0.5) - 0.5) / max(fw, 1e-4);
     float l = min(d.x, d.y);
@@ -422,7 +436,7 @@ vec3 scene(vec2 p) {
     beam *= exp(-t * 0.4);
     col += pal(fi * 0.13 + uSeed) * beam * (0.25 + 1.1 * haze);
   }
-  col *= 0.55 + 1.3 * uBeat + 0.4 * uLevel;
+  col *= 0.55 + 1.3 * uBeat + 0.4 * uLevel + uSync * 0.5 * uBeat * step(uBeatPh, 0.08);
   col += pal(uSeed + 0.2) * 0.12 * exp(-(p.y + 0.56) * 6.0) * (0.4 + uBass);
   return col;
 }`;
@@ -432,7 +446,7 @@ vec3 scene(vec2 p) {
   vec2 c1 = vec2(sin(uFlow * 0.13), cos(uFlow * 0.11)) * 0.3;
   vec2 c2 = vec2(sin(uFlow * 0.07 + 2.0), cos(uFlow * 0.17 + 1.0)) * 0.3;
   float k = 55.0 + 12.0 * uBass;
-  float w = sin(length(p - c1) * k - uFlow * 1.5) * sin(length(p - c2) * k + uFlow * 1.2);
+  float w = sin(length(p - c1) * k - uBeatT * 0.75) * sin(length(p - c2) * k + uBeatT * 0.6);
   float b = sat(w / max(fwidth(w), 1e-4) * 0.5 + 0.5);
   vec3 col = pal(length(p) * 0.6 + uFlow * 0.02 + uSeed) * b;
   return col * (0.65 + 0.6 * uBeat);
@@ -764,7 +778,7 @@ vec3 scene(vec2 p) {
     vec3 base = pal(pos.z * 0.04 + uSeed);
     col = base * (0.2 + 0.8 * max(dot(n, -rd), 0.0)) * ao;
     // neon contour lines that race along the walls with the beat
-    float lines = abs(fract(pos.z * 0.5 - uFlow * 0.5) - 0.5);
+    float lines = abs(fract(pos.z * 0.5 - uBeatT * 0.25) - 0.5);
     col += pal(uSeed + 0.5) * smoothstep(0.04, 0.0, lines) * (0.5 + 2.0 * uBeat);
     col /= 1.0 + d * d * 0.02;
   }
@@ -980,7 +994,7 @@ vec3 scene(vec2 p) {
   float r = length(p), a = atan(p.y, p.x);
   float arms = 3.0 + floor(mod(uSeed * 10.0, 4.0));
   float wob = 0.05 * sin(r * 20.0 - uFlow * 3.0) * (0.3 + uBass);
-  float v = log(r + 1e-3) * 2.5 - a * arms / TAU - uFlow * 0.6 + wob;
+  float v = log(r + 1e-3) * 2.5 - a * arms / TAU - uBeatT * 0.3 + wob;
   float band = fract(v);
   float edge = smoothstep(0.0, 0.03, band) * smoothstep(0.5, 0.47, band);
   // one colour per arm, so the stripe that wraps round meets itself
@@ -1458,7 +1472,7 @@ vec3 scene(vec2 p) {
       float rw = px * 1.5;
       float rail = clamp((0.03 + rw - abs(x1 - 0.3)) / rw, 0.0, 1.0) * min(1.0, 0.09 / (0.06 + rw));
       // a pulse of light runs ahead down the rails, brighter on the beat
-      vec3 pulse = pal(uSeed + 0.5) * smoothstep(0.9, 1.0, fract(q.z * 0.012 - uFlow * 0.35)) * (0.3 + 1.7 * uBeat);
+      vec3 pulse = pal(uSeed + 0.5) * smoothstep(0.9, 1.0, fract(q.z * 0.012 - uBeatT * 0.25)) * (0.3 + 1.7 * uBeat);
       vec3 steel = skyBase(reflect(rd, n)) * 0.9 + 0.04 + vec3(1.0, 0.9, 0.75) * gNight * (0.2 + 0.9 * exp(-d * 0.04));
       alb = mix(alb, vec3(0.1), rail);
       emi = (steel + pulse) * rail;
@@ -1546,9 +1560,16 @@ export class Visuals {
     this.vao = gl.createVertexArray();
     this.target = null;
     this.flow = 0;
-    this.beats = 0;
+    this.beats = 0;              // whole beats, for uBeats
+    this.beatT = 0;              // continuous beat time, for uBeatT (always continuous, even across mode changes)
     this._beatHi = false;
     this._t = 0;
+    this._clk = null;            // the tempo clock: { pos, bpm, source }
+    this._beatOff = 0;
+    this._lastAuto = 0;
+    this._bpmRef = 0; this._bpmSince = 0;
+    this._sm = { level: 0, bass: 0, mid: 0, high: 0, beat: 0 };
+    this._smSpec = new Float32Array(SPECTRUM_N);
     this.spec = new Float32Array(SPECTRUM_N);
     this.error = null;
     this.scene = null;
@@ -1597,19 +1618,58 @@ export class Visuals {
   }
 
   /**
-   * Which scene shows at media time `t`, and which one it is fading from.
-   * Pure: depends only on the settings, the track and the clock.
+   * The tempo clock for this frame, or null when there is none: `pos` is a
+   * continuous beat position (whole beats + phase), `bpm` the tempo, `source`
+   * 'manual' (a fixed bpm run off the media clock, identical everywhere) or
+   * 'auto' (the analyser's estimate, with its absolute beat count so every
+   * window agrees on which beat this is). A phase-locked loop follows the
+   * reference smoothly — the relayed features only arrive thirty times a
+   * second — and snaps when it is far off (a seek, a restart).
    */
-  pick(cfg, key, t) {
+  _tempo(cfg, a, time, dt, playing) {
+    let ref = null, bpm = 0, source = null;
+    const manual = Number(cfg.bpm) > 0;
+    if (manual) { bpm = Number(cfg.bpm); ref = Math.max(0, time || 0) * bpm / 60; source = 'manual'; }
+    else if (a && a.live && a.bpm > 0 && a.beats != null) { bpm = a.bpm; ref = a.beats + (a.phase || 0); source = 'auto'; this._lastAuto = bpm; }
+    if (ref == null || !(bpm > 0)) { this._clk = null; return null; }
+    const prev = this._clk && this._clk.source === source ? this._clk : null;
+    let pos = prev ? prev.pos : ref;
+    if (Math.abs(ref - pos) > 1.5) pos = ref;
+    else if (playing) pos += dt * bpm / 60 + (ref - pos) * Math.min(1, dt * 3);
+    else pos += (ref - pos) * Math.min(1, dt * 3);
+    // how steady the estimate is: locked once it has held within 4 % for three seconds
+    const now = performance.now();
+    if (!this._bpmRef || Math.abs(bpm - this._bpmRef) / this._bpmRef > 0.04) { this._bpmRef = bpm; this._bpmSince = now; }
+    const locked = manual || now - this._bpmSince > 3000;
+    this._clk = { pos, bpm, source, locked };
+    return this._clk;
+  }
+
+  /** What the panel shows next to the tempo controls. */
+  get tempo() {
+    const c = this._clk;
+    if (c) return { bpm: Math.round(c.bpm), source: c.source, locked: !!c.locked };
+    return { bpm: Math.round(this._lastAuto || 0), source: null, locked: false };
+  }
+
+  /**
+   * Which scene shows at media time `t` (or beat position `clk.pos` when the
+   * changes are on bars and there is a tempo), and which one it is fading
+   * from. Pure: depends only on the settings, the track and the clock.
+   */
+  pick(cfg, key, t, clk = null) {
     const ids = cfg.scene && cfg.scene !== 'auto' && SCENES[cfg.scene] ? [cfg.scene] : Object.keys(SCENES);
     const seed = strHash(String(key || ''));
     if (ids.length === 1) return { cur: ids[0], prev: null, alpha: 1, seed };
-    const every = Math.max(5, cfg.every || 30);
-    const slot = Math.floor(Math.max(0, t) / every);
-    const local = Math.max(0, t) - slot * every;
+    const bars = cfg.changeOn !== 'seconds' && clk && clk.bpm > 0;
+    const every = bars ? Math.max(1, Math.round(cfg.everyBars || 8)) * 4 : Math.max(5, cfg.every || 30);
+    const pos = bars ? Math.max(0, clk.pos) : Math.max(0, t);
+    const fade = bars ? FADE * clk.bpm / 60 : FADE;
+    const slot = Math.floor(pos / every);
+    const local = pos - slot * every;
     const cur = sceneAt(ids, seed, slot);
-    if (slot === 0 || local >= FADE) return { cur, prev: null, alpha: 1, seed };
-    const a = local / FADE;
+    if (slot === 0 || local >= fade) return { cur, prev: null, alpha: 1, seed };
+    const a = local / fade;
     return { cur, prev: sceneAt(ids, seed, slot - 1), alpha: a * a * (3 - 2 * a), seed };
   }
 
@@ -1620,30 +1680,72 @@ export class Visuals {
   render(opts) {
     const gl = this.gl;
     const cfg = { ...defaultVisualsCfg(), ...(opts.cfg || {}) };
-    const pick = this.pick(cfg, opts.key, opts.time || 0);
+    const a = opts.audio || {};
+    const now = performance.now();
+    const dt = this._t ? Math.min(0.1, (now - this._t) / 1000) : 0;
+    this._t = now;
+    const playing = opts.playing !== false;
+    const clk = this._tempo(cfg, a, opts.time, dt, playing);
+    const pick = this.pick(cfg, opts.key, opts.time || 0, clk);
     const k = Math.min(SCENE_SCALE[pick.cur] || 1, pick.prev ? SCENE_SCALE[pick.prev] || 1 : 1);
     const w = Math.max(16, Math.round((opts.w | 0) * k)), h = Math.max(16, Math.round((opts.h | 0) * k));
     if (!this.target || this.target.w !== w || this.target.h !== h) {
       if (this.target) this.target.dispose();
       this.target = new Target(gl, w, h, 'rgba8');
     }
-    const a = opts.audio || {};
     const react = cfg.react == null ? 1 : cfg.react;
-    const now = performance.now();
-    const dt = this._t ? Math.min(0.1, (now - this._t) / 1000) : 0;
-    this._t = now;
-    const lv = (v) => Math.min(1.5, (v || 0) * react);
-    const level = lv(a.level), bass = lv(a.bass), beat = lv(a.beat);
-    if (opts.playing !== false) {
-      // loud passages push the picture along, quiet ones let it drift
-      this.flow += dt * (cfg.speed || 1) * (0.55 + 0.8 * level + 0.5 * beat);
-      if (this.flow > 1e4) this.flow -= 1e4;
-    }
-    const hi = (a.beat || 0) > 0.7;
-    if (hi && !this._beatHi) this.beats = (this.beats + 1) % 1000;
-    this._beatHi = hi;
+    const kick = cfg.kick == null ? 1 : Math.max(0, cfg.kick);
+    // the levels, smoothed so a jittery track does not flicker (0 = raw)
+    const tau = Math.max(0, Math.min(1, cfg.smooth == null ? 0.3 : cfg.smooth)) * 0.25;
+    const alpha = tau > 0 && dt > 0 ? 1 - Math.exp(-dt / tau) : 1;
+    const sm = this._sm;
+    for (const key of ['level', 'bass', 'mid', 'high']) sm[key] += ((a[key] || 0) - sm[key]) * alpha;
     const sp = a.spectrum || [];
-    for (let i = 0; i < SPECTRUM_N; i++) this.spec[i] = Math.min(1.5, (sp[i] || 0) * react);
+    for (let i = 0; i < SPECTRUM_N; i++) {
+      this._smSpec[i] += ((sp[i] || 0) - this._smSpec[i]) * alpha;
+      this.spec[i] = Math.min(1.5, this._smSpec[i] * react);
+    }
+    const lv = (v) => Math.min(1.5, (v || 0) * react);
+    const level = lv(sm.level), bass = lv(sm.bass);
+    // the beat pulse: the detector's hit, or — on a fixed tempo — one synthesised
+    // on the grid, so it is rock-steady and the same in every window
+    const rawBeat = clk && clk.source === 'manual' ? (playing ? Math.exp(-(clk.pos - Math.floor(clk.pos)) * 4.5) : 0)
+      : (a.live ? a.beat || 0 : 0);
+    const beat = Math.min(1.5, rawBeat * react * kick);
+
+    const speed = cfg.speed || 1;
+    const locked = cfg.sync !== 'free' && !!clk;
+    if (locked) {
+      // Beat-locked: the scene moves half a flow unit per beat (a 120 bpm track
+      // runs about as fast as free mode does), with a push on every beat that
+      // eases through it — d(flow)/d(beat) = 1 + K·π·cos(π·phase), which
+      // integrates to exactly one over a beat, so nothing drifts.
+      const K = 0.18;
+      let dB = playing ? clk.pos - (this._beatPos == null ? clk.pos : this._beatPos) : 0;
+      if (!(dB >= 0 && dB < 1)) dB = playing ? dt * clk.bpm / 60 : 0;   // a snap: keep the motion continuous
+      this._beatPos = clk.pos;
+      const ph = clk.pos - Math.floor(clk.pos);
+      this.flow += speed * 0.5 * dB * (1 + K * Math.PI * Math.cos(Math.PI * ph));
+      // beat time follows the clock's phase exactly, offset by whole beats so
+      // it never jumps when the tempo source appears or changes
+      if (!this._wasLocked || Math.abs(clk.pos + this._beatOff - this.beatT) > 1.5) this._beatOff = Math.round(this.beatT - clk.pos);
+      this.beatT = clk.pos + this._beatOff;
+      this.beats = Math.floor(this.beatT);
+    } else {
+      // free: loud passages push the picture along, quiet ones let it drift
+      const dF = playing ? dt * speed * (0.55 + 0.8 * level + 0.5 * beat) : 0;
+      this.flow += dF;
+      this.beatT += dF * 2;
+      this._beatPos = null;
+      const hi = rawBeat > 0.7;
+      if (hi && !this._beatHi) this.beats += 1;
+      this._beatHi = hi;
+    }
+    this._wasLocked = locked;
+    if (this.flow > 1e4) { this.flow -= 1e4; }
+    if (this.beatT > 1e5) { this.beatT -= 1e5; this._beatOff -= 1e5; }
+    if (this.beats > 1e6) this.beats -= 1e6;
+    const beatPh = this.beatT - Math.floor(this.beatT);
 
     this.scene = pick.cur;
     const palName = cfg.palette && cfg.palette !== 'auto' && VISUAL_PALETTES[cfg.palette]
@@ -1663,10 +1765,14 @@ export class Visuals {
       gl.uniform2f(U.uRes, w, h);
       gl.uniform1f(U.uFlow, this.flow);
       gl.uniform1f(U.uBeats, this.beats);
+      gl.uniform1f(U.uBeatT, this.beatT);
+      gl.uniform1f(U.uBeatPh, beatPh);
+      gl.uniform1f(U.uSync, locked ? 1 : 0);
+      gl.uniform1f(U.uGain, Math.max(0.1, Number(cfg.gain) || 1));
       gl.uniform1f(U.uLevel, level);
       gl.uniform1f(U.uBass, bass);
-      gl.uniform1f(U.uMid, lv(a.mid));
-      gl.uniform1f(U.uHigh, lv(a.high));
+      gl.uniform1f(U.uMid, lv(sm.mid));
+      gl.uniform1f(U.uHigh, lv(sm.high));
       gl.uniform1f(U.uBeat, beat);
       if (U.uSpec) gl.uniform1fv(U.uSpec, this.spec);
       gl.uniform3fv(U.uPa, pal[0]); gl.uniform3fv(U.uPb, pal[1]);
@@ -1710,7 +1816,7 @@ export class Visuals {
     // compile the next scene well before its cross-fade needs it
     if (!this._warm || now - this._warm > 1000) {
       this._warm = now;
-      const ahead = this.pick(cfg, opts.key, (opts.time || 0) + 4);
+      const ahead = this.pick(cfg, opts.key, (opts.time || 0) + 4, clk ? { ...clk, pos: clk.pos + 4 * clk.bpm / 60 } : null);
       this._prog(ahead.cur);
     }
     return { tex: this.target.tex, w, h };
