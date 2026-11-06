@@ -947,13 +947,13 @@ removes the dark fringe and the shimmer around them.
 
 ## The default picture
 
-With nothing playing, every wall shows the same still instead of black: the
-three toys on a glossy studio floor under a spotlight,
-`assets/default-picture.jpg`. It is rendered in software from the models by
-`node scripts/default-picture.mjs`, so it changes when they do. The engine maps
-it exactly as it would a video frame until one arrives, the hover previews in
-the Effects catalogue run over it when no video is playing, and the catalogue
-thumbnails are all shot over it, so the cards look alike.
+With nothing playing, every wall shows the same still instead of black: a
+plain studio backdrop — a wall under a soft spotlight, a glossy floor, a few
+bokeh lights — `assets/default-picture.jpg`, drawn by
+`node scripts/default-picture.mjs`. The engine maps it exactly as it would a
+video frame until one arrives, the hover previews in the Effects catalogue run
+over it when no video is playing, and the catalogue thumbnails are all shot
+over it, so the cards look alike and the effects are what you see.
 
 ## The toys
 
@@ -1068,8 +1068,8 @@ scripts/fx-thumbs.mjs    capture the effect thumbnails and hover clips from the 
 scripts/build-models.mjs the toy figurines: signed-distance parts -> surface nets -> .glb with colors, occlusion and a rig
 scripts/models/          the three figurines as code (alpaca, leopard, sumo) and the SDF toolkit
 scripts/render-model.mjs a turnaround of a built model to tmp/renders/, no app needed
-scripts/default-picture.mjs the still every wall shows when nothing plays: the toys, rendered in software
-scripts/models/raster.mjs  the software rasteriser behind the turnarounds and the default picture
+scripts/default-picture.mjs the still every wall shows when nothing plays: a plain studio backdrop
+scripts/models/raster.mjs  the software rasteriser behind the turnarounds and the default picture's camera
 assets/default-picture.jpg the default picture
 src/shared/default-picture.mjs the shared <img> of it, for every window's engine
 assets/models/           the built alpaca.glb, leopard.glb and sumo.glb
