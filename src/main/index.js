@@ -47,7 +47,7 @@ const MIME = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
   '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.m4a': 'audio/mp4',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.aac': 'audio/aac', '.ogg': 'audio/ogg',
-  '.wasm': 'application/wasm', '.onnx': 'application/octet-stream',
+  '.wasm': 'application/wasm', '.onnx': 'application/octet-stream', '.glb': 'model/gltf-binary',
 };
 const mimeOf = (p) => MIME[path.extname(p).toLowerCase()] || 'application/octet-stream';
 
@@ -1012,9 +1012,10 @@ function handleProtocols() {
     if (u.pathname === '/__stream') return proxyStream(req, u.searchParams.get('u'));
     let rel = decodeURIComponent(u.pathname);
     if (rel === '/' || rel === '') rel = '/renderer/control/index.html';
-    // the depth model's runtime lives in node_modules: only those two packages are reachable
-    const vendor = /^\/node_modules\/(@huggingface\/transformers|onnxruntime-web)\//.test(rel);
-    const base = vendor ? path.join(ROOT, '..') : ROOT;
+    // the depth model's runtime lives in node_modules (only those two packages
+    // are reachable) and the toy models in assets/, both beside src/
+    const outside = /^\/node_modules\/(@huggingface\/transformers|onnxruntime-web)\//.test(rel) || /^\/assets\//.test(rel);
+    const base = outside ? path.join(ROOT, '..') : ROOT;
     const file = path.normalize(path.join(base, rel));
     if (!file.startsWith(base)) return new Response('forbidden', { status: 403 });
     try {

@@ -27,7 +27,9 @@ npm start                                          # or from source
 npm run build                                      # rebuild the .app
 ```
 
-Requires `yt-dlp` for YouTube (installed via Homebrew).
+Requires `yt-dlp` for YouTube (installed via Homebrew). If Homebrew's libvips is
+on the Mac, `npm install` tries to compile sharp against it and fails; install with
+`SHARP_IGNORE_GLOBAL_LIBVIPS=1 npm install` to take the prebuilt binary instead.
 
 ## The idea
 
@@ -241,6 +243,15 @@ dividing cellular forms, wave interference, weaving, tree maps:
 | **Thermal camera** | False colour by brightness: an iron heat palette, rainbow, green night vision or a Predator-style edge view. |
 | **Stained glass** | The picture leaded into Voronoi glass panes, each one colour, the light shifting across them. |
 
+The **Toys** group puts three figurines from the coffee table on the wall as
+real 3D models (see [The toys](#the-toys)):
+
+| | |
+| --- | --- |
+| **Toy box** | The alpaca, the leopard and the sumo as solid 3D toys: they tumble in, flail on the way down, land on a side on your shapes and pile up. Rigid bodies in the same solver as the balls, drawn as meshes with a little perspective and a contact shadow. |
+| **Toy parade** | The figurines walk the floor and the tops of your shapes: the alpaca hops, the sumo stomps, the leopard waddles. They jump up onto ledges, step off edges, hop to the beat, glance at your hand and get knocked flying by it. |
+| **Toy showcase** | One figurine as big as the wall on a slow turntable, lit like a product shot: a key light, a colored rim light, the picture reflected in the paint, a mirror floor. It bounces on the beat and looks at the pointer; the three take turns, or stand in a row. |
+
 ### Every effect
 
 <!-- gallery:start -->
@@ -376,6 +387,14 @@ dividing cellular forms, wave interference, weaving, tree maps:
 
 <table><tr>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/people.jpg" width="220" alt="Pixel people"><br><sub>Pixel people</sub></td>
+</tr></table>
+
+**Toys**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toydrop.jpg" width="220" alt="Toy box"><br><sub>Toy box</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toyparade.jpg" width="220" alt="Toy parade"><br><sub>Toy parade</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toyshow.jpg" width="220" alt="Toy showcase"><br><sub>Toy showcase</sub></td>
 </tr></table>
 
 <!-- gallery:end -->
@@ -925,6 +944,39 @@ covered rather than with time, so the legs never skate; dance frames advance
 with the beat. Sprites are uploaded premultiplied and mipmapped, which is what
 removes the dark fringe and the shimmer around them.
 
+## The toys
+
+Three figurines from the coffee table — a woolly alpaca, a leopard with
+hand-painted rosettes and a red sumo in blue shorts — live in `assets/models/`
+as glTF binaries (`alpaca.glb`, `leopard.glb`, `sumo.glb`) and drive the
+**Toys** group of effects: Toy box, Toy parade and Toy showcase.
+
+They were not downloaded or scanned. Each is modeled in code, in
+`scripts/models/`, as a stack of signed-distance parts — ellipsoids, capsules
+and rounded boxes blended smoothly into one another, much the way the toys
+themselves were sculpted — with a paint function on top for the decals: the
+leopard's spots are a cellular pattern laid in the surface's tangent plane so
+every rosette comes out whole, the sumo gets his face paint and the sheen on
+his hair, the alpaca the little Y of a mouth. The alpaca's wool is the surface
+displaced by two sizes of cellular bumps. `npm run build:models` samples each
+field on a grid, meshes it with naive surface nets, takes the normals from the
+field's gradient (which is what makes the fluff shade), bakes ambient
+occlusion and the contact with the floor into every vertex, and writes vertex
+colors plus a small rig: every vertex knows which of eight bones (body, head,
+arms, legs, ears) it belongs to and how firmly, from its distance to the other
+parts, as a `_BONE` attribute. Around 100k vertices and 5 MB a model.
+`node scripts/render-model.mjs sumo` draws a turnaround to `tmp/renders/`
+without the app; `--pose` bends the rig to check the skinning.
+
+On the wall (`src/shared/fx/mesh3d.mjs`) the models are drawn instanced with a
+depth buffer, in wall coordinates, from a camera a few wall-widths in front of
+the center, so a toy standing out from the wall looms a little. Each instance
+carries its place, height, yaw, lean and roll, a squash-and-stretch, a pose
+(head nod and turn, arm swing, leg step; the ears flap with the step) and a
+tint. The shader lights them with a key light, a rim light and the baked
+occlusion, and can reflect the live picture in the paint. The files open in
+anything that reads glTF, with the rig in the node's `extras`.
+
 ## Playing from the phone
 
 The phone's **F5 Play** tab shows the wall live and is a touch surface: fingers
@@ -1002,6 +1054,10 @@ src/shared/pose.mjs      body landmarks -> the joints and limbs that push
 scripts/fetch-models.sh  bundle the pose tracker so phones need no internet
 scripts/visual-thumbs.mjs render a frame of every visuals scene for the catalogue and README
 scripts/fx-thumbs.mjs    capture the effect thumbnails and hover clips from the running app
+scripts/build-models.mjs the toy figurines: signed-distance parts -> surface nets -> .glb with colors, occlusion and a rig
+scripts/models/          the three figurines as code (alpaca, leopard, sumo) and the SDF toolkit
+scripts/render-model.mjs a turnaround of a built model to tmp/renders/, no app needed
+assets/models/           the built alpaca.glb, leopard.glb and sumo.glb
 
 src/shared/fx/system.mjs     the effect stack: layers, clock, compositing, bloom
 src/shared/fx/field.mjs      occluders -> signed distance field + collision triangles
@@ -1011,6 +1067,8 @@ src/shared/fx/fluid.mjs      Eulerian solver for smoke / fire / ink
 src/shared/fx/wave.mjs       damped wave equation
 src/shared/fx/audio.mjs      audio analysis, beat detection, parameter modulation
 src/shared/fx/glu.mjs        GL helpers and shared shader chunks
+src/shared/fx/glb.mjs        a small glTF binary reader, shared by the app and the render script
+src/shared/fx/mesh3d.mjs     the toys on the wall: instanced, lit, depth-tested, posed through their rig
 src/shared/fx/effects/       one file per effect family
 ```
 

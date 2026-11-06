@@ -19,6 +19,7 @@ import { halftone, ascii, eightbit, painterly, thermal, stainedglass } from './l
 import tetris from './tetris.mjs';
 import { aitext, aidream } from './ai.mjs';
 import { people } from './people.mjs';
+import { toydrop, toyparade, toyshow } from './toys.mjs';
 import { reaction, life, rule, coral, symmetry, sprawl, aleph, pointcloud, plexus, digits, treemap, quasicrystal,
   interference, weave, flowlines, moire, joyplot, ringrows, parallax, circular, dust, bars, etching, polyhedra } from './generative.mjs';
 
@@ -34,4 +35,5 @@ export const EFFECTS = [
   shadows, extrude, aura, fieldlines, shockwave, glassrim, plasma, frost, contour, stagelights, neon,
   aitext, aidream,
   people,
+  toydrop, toyparade, toyshow,
 ];

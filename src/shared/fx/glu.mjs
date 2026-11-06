@@ -223,16 +223,31 @@ export class Target {
     this.fbo = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
+    // a depth buffer, for the few layers that draw real geometry
+    this.depth = null;
+    if (opts.depth) {
+      this.depth = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, this.depth);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, this.w, this.h);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depth);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
   bind(clear) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.viewport(0, 0, this.w, this.h);
-    if (clear) { gl.clearColor(clear[0], clear[1], clear[2], clear[3]); gl.clear(gl.COLOR_BUFFER_BIT); }
+    if (clear) {
+      gl.clearColor(clear[0], clear[1], clear[2], clear[3]);
+      gl.clear(this.depth ? gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT : gl.COLOR_BUFFER_BIT);
+    }
     return this;
   }
-  dispose() { this.gl.deleteTexture(this.tex); this.gl.deleteFramebuffer(this.fbo); }
+  dispose() {
+    this.gl.deleteTexture(this.tex); this.gl.deleteFramebuffer(this.fbo);
+    if (this.depth) this.gl.deleteRenderbuffer(this.depth);
+  }
 }
 
 export class PingPong {

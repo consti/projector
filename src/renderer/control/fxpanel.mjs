@@ -169,7 +169,7 @@ export const SCENES = [
   },
 ];
 
-const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'People', 'Generative', 'Trippy', 'Retro', 'Look', 'AI'];
+const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'People', 'Toys', 'Generative', 'Trippy', 'Retro', 'Look', 'AI'];
 
 export function buildFxSection(ui) {
   const P = ui.project();
@@ -812,4 +812,5 @@ const GROUP_BLURB = {
   Generative: 'The picture run through generative systems, after the Max Cooper videos: reaction-diffusion, automata, symmetry operations, infinite zooms, networks, tree maps, weaving.',
   AI: 'The film read by a model ahead of the playhead and written or painted back over itself. Turn AI on in Setup; the director there can also steer the whole stack.',
   People: 'Everyone who pixelated themselves on the phone, living on your wall. Manage the roster in People.',
+  Toys: 'The three figurines from the coffee table as 3D models: dropped into the room, parading over your shapes, or on a turntable as big as the wall.',
 };
