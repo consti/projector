@@ -77,6 +77,8 @@ for (const type of list) {
     fx.layers = [m.defaultFxLayer(${JSON.stringify(type)})]; fx.enabled = true; fx.preview = true; d.push(true); d.rebuild(); return true; })`);
   if (type === 'aitext') await c.eval(`(() => { const d = window.__dev; d.fxAction(d.project.fx.layers[0].id, 'set', { text: 'A room full of slow light, and someone about to speak.' }); return 1; })()`);
   await sleep(WAIT[type] || 3000);
+  // lightning strikes now and then; without one the frame is just the picture
+  if (type === 'lightning') { await c.eval(`(() => { const d = window.__dev; for (let i = 0; i < 3; i++) d.fxAction(d.project.fx.layers[0].id, 'strike'); return 1; })()`); await sleep(40); }
   const err = await c.eval(`(() => { const s = window.__dev.fxHost.stats(); return s && s.error || null; })()`);
   const clip = await c.eval(`(() => { const r = document.querySelector('#frame').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height, scale: 1 }; })()`);
   const shot = await c.send('Page.captureScreenshot', { format: 'png', clip });
