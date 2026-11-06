@@ -10,6 +10,7 @@
 
 import { readRows, combine, framesOf, chromaKey, findSprites, loadImage } from '/renderer/control/sheetpack.mjs';
 import { legacyManifest } from '/shared/sprites.mjs';
+import { help } from '/renderer/control/ui.mjs';
 
 // made-up names with no gender to them: a verb and a fruit
 const VERBS = ['Juggling', 'Dancing', 'Wobbling', 'Bouncing', 'Sneaking', 'Whistling', 'Napping', 'Spinning', 'Humming', 'Skipping', 'Yawning', 'Zooming', 'Tiptoeing', 'Giggling', 'Floating', 'Marching', 'Snoring', 'Waddling', 'Twirling', 'Grooving'];
@@ -223,12 +224,12 @@ export class PeopleView {
     const sets = (this.h.settings().fxSets || []).map((s) => s.name);
     const active = this.h.settings().fxSet || '';
     const bar = el('div', { class: 'libBar' }, [
-      el('div', { class: 'libTitle' }, [el('span', { text: 'People' }), el('span', { class: 'libCount hint', text: `${this.list.length} in the roster` })]),
+      el('div', { class: 'libTitle' }, [el('span', { text: 'People' }), el('span', { class: 'libCount hint', text: `${this.list.length} in the roster` }),
+        help('Anyone on the phone can pixelate themselves (F4 Me). Characters that are on (and, when an effect set is active, in that set) appear in the Pixel people effect: they fall in, walk and climb your shapes, dance to the beat. A photo goes to OpenAI\u2019s image model, which draws a hero and six sheets of moves, about a dollar and three minutes a person; nothing else leaves the room.')]),
       el('span', { class: 'grow' }),
       el('button', { class: 'btn', text: 'Add from photo…', onclick: () => this.pick() }),
     ]);
     root.appendChild(bar);
-    root.appendChild(el('div', { class: 'libNote hint', text: 'Anyone on the phone can pixelate themselves (F4 Me). Characters that are on — and, when an effect set is active, in that set — appear in the Pixel people effect: they fall in, walk and climb your shapes, dance to the beat. A photo goes to OpenAI’s image model, which draws a hero and six sheets of moves (about a dollar and three minutes a person); nothing else leaves the room.' }));
     if (this.jobs.length) {
       root.appendChild(el('div', { class: 'libBatch' }, this.jobs.map((j) => el('span', { class: 'statChip' + (j.error ? ' bad' : ' busy on'), text: `${j.name}: ${j.status}${j.error ? ' — ' + j.error : ''}`,
         onclick: () => { if (j.error) { this.jobs = this.jobs.filter((x) => x !== j); this.render(); } } }))));

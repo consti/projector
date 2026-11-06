@@ -122,7 +122,8 @@ export class AiDirector {
     // steering
     rows.push(el('div', { class: 'fxhead', text: 'Steering' }));
     rows.push(el('div', { class: 'row' }, [
-      ui.toggle('AI steers the effects', () => !!this.ai.steer, (v) => { this.patch({ steer: v }); if (v) this.lastTrack = null; }, { push: false }),
+      ui.toggle('AI steers the effects', () => !!this.ai.steer, (v) => { this.patch({ steer: v }); if (v) this.lastTrack = null; },
+        { push: false, tip: 'When a track starts the director is told what is playing and what is next, the measured beat and spectrum, the colours on the wall, your shapes and walls, and every effect with its parameters. It picks the layers, tunes them, links them to the sound and sets the beat triggers. The brief is a standing direction it must respect.' }),
       el('button', { class: 'btn sm', text: this.busy ? 'Planning…' : 'Steer now', disabled: this.busy || !on ? '' : null,
         onclick: () => this.plan('asked for') }),
     ]));
@@ -131,20 +132,17 @@ export class AiDirector {
     brief.onchange = () => this.patch({ steerBrief: brief.value });
     rows.push(el('div', { class: 'ctl wide' }, [el('label', { text: 'Brief' }), brief]));
     rows.push(ui.selectRow('Re-plan', [['track', 'Once per track'], ['sections', 'When the music changes section'], ['timer', 'On a timer (give or take)']],
-      () => a.steerMode || 'sections', (v) => this.patch({ steerMode: v })));
+      () => a.steerMode || 'sections', (v) => this.patch({ steerMode: v }),
+      { tip: 'Sections are found locally, without a model: a sustained jump or drop in loudness and bass against the last half minute (a drop, a breakdown, a build). Then the director is asked again, usually, not always, and never within 40 s of the last plan.' }));
     if ((a.steerMode || 'sections') === 'timer') {
       rows.push(ui.slider('Every', () => a.steerEvery || 90, (v) => this.patch({ steerEvery: Math.round(v) }),
         { min: 30, max: 300, step: 15, fmt: (v) => '~' + Math.round(v) + ' s', push: false }));
     }
-    if ((a.steerMode || 'sections') === 'sections') {
-      rows.push(el('div', { class: 'hint', text: 'Sections are found locally, without a model: a sustained jump or drop in loudness and bass against the last half minute (a drop, a breakdown, a build) — then the director is asked again, usually, not always, and never within 40 s of the last plan.' }));
-    }
     rows.push(ui.selectRow('Thinking', [['none', 'None'], ['low', 'A little'], ['medium', 'Some'], ['high', 'A lot']],
       () => a.steerReasoning || 'low', (v) => this.patch({ steerReasoning: v })));
-    rows.push(el('div', { class: 'hint', text: 'When a track starts the director is told what is playing and what is next, the measured beat and spectrum, the colours on the wall, your shapes and walls, and every effect with its parameters. It picks the layers, tunes them, links them to the sound and sets the beat triggers. The brief is a standing direction it must respect.' }));
 
     // vision
-    rows.push(el('div', { class: 'fxhead', text: 'Reading the film' }));
+    rows.push(el('div', { class: 'fxhead', text: 'Reading the film', title: 'These run only while an AI caption or AI dream layer is in the stack (or AI picks the emoji is on). A second copy of the video runs ahead of the playhead; each frame read is captioned or re-painted and shown when the film reaches it.' }));
     rows.push(ui.selectRow('Caption style', CAPTION_STYLES, () => a.captionStyle || 'poetic', (v) => this.patch({ captionStyle: v })));
     rows.push(ui.selectRow('Language', LANGUAGES.map((l) => [l, l]), () => a.captionLanguage || 'English', (v) => this.patch({ captionLanguage: v })));
     rows.push(ui.slider('Caption every', () => a.captionEvery || 18, (v) => this.patch({ captionEvery: Math.round(v) }), { min: 6, max: 90, step: 1, fmt: (v) => Math.round(v) + ' s', push: false }));
@@ -154,7 +152,6 @@ export class AiDirector {
     rows.push(el('div', { class: 'row' }, [
       ui.toggle('AI picks the emoji', () => !!this.ai.emoji, (v) => this.patch({ emoji: v }), { push: false }),
     ]));
-    rows.push(el('div', { class: 'hint', text: 'These run only while an AI caption or AI dream layer is in the stack (or AI picks the emoji is on). A second copy of the video runs ahead of the playhead; each frame read is captioned or re-painted and shown when the film reaches it.' }));
 
     // spend
     const KIND_LABEL = { director: 'Director', caption: 'Captions', dream: 'Dreams', sprite: 'Pixel people', chat: 'Other', image: 'Images' };

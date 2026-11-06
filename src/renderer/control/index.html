@@ -26,10 +26,11 @@
     <span class="grow"></span>
     <button id="tSound" title="What the effects hear"><span class="sBeat"></span><span class="sBars"><i></i><i></i><i></i><i></i><i></i></span><span class="sTxt">&mdash;</span></button>
     <span id="tVisSlot"></span>
-    <label class="tog" id="tAi" title="AI steers the effects (Setup → AI)"><input type="checkbox"><span class="sw"></span><span class="tl">AI</span></label>
-    <label class="tog" id="oProj" title="Projector output window"><input type="checkbox"><span class="sw"></span><span class="tl">Projector</span></label>
-    <label class="tog" id="oTv" title="TV output window"><input type="checkbox"><span class="sw"></span><span class="tl">TV</span></label>
-    <label class="tog danger" id="gBlack" title="Blackout (B)"><input type="checkbox"><span class="sw"></span><span class="tl">Blackout</span></label>
+    <div class="togGroup">
+      <label class="tog" id="oProj" title="Projector output window"><input type="checkbox"><span class="sw"></span><span class="tl">Projector</span></label>
+      <label class="tog" id="oTv" title="TV output window"><input type="checkbox"><span class="sw"></span><span class="tl">TV</span></label>
+      <label class="tog danger" id="gBlack" title="Blackout (B)"><input type="checkbox"><span class="sw"></span><span class="tl">Blackout</span></label>
+    </div>
   </div>
 
   <nav id="rail">
@@ -72,15 +73,14 @@
           <button class="btn" data-tool="maskRect" title="Draw a shape as a rectangle: something on the wall the projector must not light (M)">+ Shape</button>
           <button class="btn" data-tool="maskPoly" title="Draw a shape point by point (P)">+ Shape (draw)</button>
         </div>
-        <button class="btn" id="dupBtn" title="Duplicate (Cmd+D)">Duplicate</button>
-        <button class="btn danger" id="delBtn" title="Delete (Backspace)">Delete</button>
-        <span style="width:6px"></span>
+        <button class="btn icon" id="dupBtn" title="Duplicate the selection (Cmd+D)">&#10697;</button>
+        <button class="btn icon danger" id="delBtn" title="Delete the selection (Backspace)">&#10005;</button>
         <label class="tog" id="handlesBtn" title="Show handles"><input type="checkbox" checked><span class="sw"></span><span class="tl">Handles</span></label>
         <label class="tog" id="guidesBtn" title="Show outlines on the projector itself"><input type="checkbox"><span class="sw"></span><span class="tl">Wall guides</span></label>
         <select id="patSelect" title="Calibration pattern">
-          <option value="off">No test pattern</option>
+          <option value="off">No pattern</option>
           <option value="grid">Grid</option>
-          <option value="corners">Corner markers</option>
+          <option value="corners">Corners</option>
           <option value="bars">Colour bars</option>
           <option value="circles">Circles</option>
           <option value="checker">Checkerboard</option>

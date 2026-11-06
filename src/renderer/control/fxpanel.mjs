@@ -191,10 +191,6 @@ export function buildFxSection(ui) {
     if (!ready) rows.push(el('div', { class: 'hint', text: 'Turn AI on in Setup (and give it a key) to let the director steer.' }));
     else if (a.log.length && a.log[0].kind === 'plan') rows.push(el('div', { class: 'hint', text: 'AI: ' + a.log[0].text.split(' — ')[0] }));
   }
-  rows.push(el('div', { class: 'hint', text: 'The stack runs on both walls; each layer can be limited to one of them. Cmd-click a layer to solo it (and again to bring the others back); Cmd-click a card in the catalogue to make it the only effect.' }));
-  if (!fx.enabled) {
-    rows.push(el('div', { class: 'hint', text: 'Physics and simulation layers drawn over the mapped video, in projector space. Everything collides with the shapes you have masked.' }));
-  }
 
   // ---------------------------------------------------------- layer stack
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:2px' });
@@ -306,7 +302,7 @@ export function buildFxSection(ui) {
   });
   rows.push(stats);
 
-  return ui.section('Effects', rows);
+  return ui.section('Effects', rows, { help: 'The stack runs on both walls; each layer can be limited to one of them. Cmd-click a layer to solo it (and again to bring the others back); Cmd-click a card in the catalogue to make it the only effect.' });
 }
 
 
@@ -331,11 +327,10 @@ export function buildFxWorldSections(ui) {
   ]));
   const walls = fx.walls || (fx.walls = { l: true, r: true, t: false, b: true });
   world.push(el('div', { class: 'row' }, [
-    ui.toggle('Floor', () => walls.b, (v) => (walls.b = v)),
-    ui.toggle('Ceiling', () => walls.t, (v) => (walls.t = v)),
-    ui.toggle('Sides', () => walls.l && walls.r, (v) => { walls.l = v; walls.r = v; }),
+    ui.toggle('Floor', () => walls.b, (v) => (walls.b = v), { tip: 'The bottom edge holds things in; without it, whatever falls leaves the wall' }),
+    ui.toggle('Ceiling', () => walls.t, (v) => (walls.t = v), { tip: 'The top edge holds things in' }),
+    ui.toggle('Sides', () => walls.l && walls.r, (v) => { walls.l = v; walls.r = v; }, { tip: 'The left and right edges hold things in' }),
   ]));
-  world.push(el('div', { class: 'hint', text: 'Which edges of the picture hold things in. With no floor, whatever falls leaves the wall.' }));
 
   // --- interaction: everything that pushes the simulation from outside
   inter.push(el('div', { class: 'fxhead', text: 'Pointer' }));
@@ -379,9 +374,8 @@ export function buildFxWorldSections(ui) {
   inter.push(el('div', { class: 'fxhead', text: 'Phones' }));
   inter.push(el('div', { class: 'row' }, [
     ui.toggle('Fingers push things', () => ui.settings().phoneTouch !== false, (v) => ui.patchSettings({ phoneTouch: v }),
-      { push: false, title: 'Fingers on a phone\u2019s live picture push the effects, like hands in front of the wall' }),
+      { push: false, title: 'Fingers on a phone\u2019s live picture push the effects, like hands in front of the wall. What a phone may do with the pixel people is under Setup \u2192 Phone.' }),
   ]));
-  inter.push(el('div', { class: 'hint', text: 'What a phone may do with the pixel people is under Setup \u2192 Phone.' }));
 
   // --- look
   look.push(ui.slider('Bloom', () => fx.bloom, (v) => (fx.bloom = v), { min: 0, max: 2 }));
@@ -391,10 +385,13 @@ export function buildFxWorldSections(ui) {
   look.push(ui.selectRow('Quality', Object.keys(QUALITY).map((k) => [k, k[0].toUpperCase() + k.slice(1)]),
     () => fx.quality || 'high', (v) => { fx.quality = v; ui.push(true); }));
 
+  const sound = soundSection(ui, fx);
   return [
-    ui.section('Sound', soundSection(ui, fx)),
-    ui.section('World', world),
-    ui.section('Interaction', inter),
+    ui.section('Sound', sound.rows, { help: 'What the effects hear. Links and beat triggers are set per layer in the stack; every wall gets the same analysis whichever window plays the sound.' }),
+    ui.section('Analyser', sound.analyser),
+    ui.section('Sound drives the world', sound.drives, { help: 'Amounts are relative: +1 doubles the value at full level.' }),
+    ui.section('World', world, { help: 'The physics every simulation layer lives in, and which edges of the picture hold things in.' }),
+    ui.section('Interaction', inter, { help: 'Everything that pushes the simulation from outside: the pointer over the preview, people seen by an aligned camera, fingers on a phone.' }),
     ui.section('Effects look', look),
   ];
 }
@@ -453,21 +450,20 @@ function soundSection(ui, fx) {
     readout.style.color = a.enabled && !f.live ? 'var(--warn)' : '';
   });
 
-  rows.push(el('div', { class: 'fxhead', text: 'Analyser' }));
-  rows.push(ui.slider('Sensitivity', () => a.sensitivity, (v) => (a.sensitivity = v), { min: 0.2, max: 5, fmt: (v) => v.toFixed(2) }));
-  rows.push(ui.slider('Beat', () => a.beatThreshold, (v) => (a.beatThreshold = v), { min: 0.4, max: 4, fmt: (v) => v.toFixed(2) }));
-  rows.push(el('div', { class: 'hint', text: 'Lower Beat to catch softer beats; raise it if every hi-hat fires.' }));
-  rows.push(ui.slider('Attack', () => a.attack, (v) => (a.attack = v), { min: 0.002, max: 0.3, step: 0.002, fmt: (v) => Math.round(v * 1000) + 'ms' }));
-  rows.push(ui.slider('Release', () => a.release, (v) => (a.release = v), { min: 0.02, max: 1.2, step: 0.01, fmt: (v) => Math.round(v * 1000) + 'ms' }));
-
-  rows.push(el('div', { class: 'fxhead', text: 'Sound drives the world' }));
-  rows.push(el('div', { class: 'hint', text: 'Amounts are relative: +1 doubles the value at full level.' }));
-  rows.push(ui.selectRow('Driven by', SOURCES.filter((o) => o[0] !== 'none'),
-    () => a.globalSrc || 'level', (v) => (a.globalSrc = v)));
+  // the analyser and the world drives fold away under the meters
+  const analyser = [
+    ui.slider('Sensitivity', () => a.sensitivity, (v) => (a.sensitivity = v), { min: 0.2, max: 5, fmt: (v) => v.toFixed(2) }),
+    ui.slider('Beat', () => a.beatThreshold, (v) => (a.beatThreshold = v), { min: 0.4, max: 4, fmt: (v) => v.toFixed(2), tip: 'Lower it to catch softer beats; raise it if every hi-hat fires' }),
+    ui.slider('Attack', () => a.attack, (v) => (a.attack = v), { min: 0.002, max: 0.3, step: 0.002, fmt: (v) => Math.round(v * 1000) + 'ms' }),
+    ui.slider('Release', () => a.release, (v) => (a.release = v), { min: 0.02, max: 1.2, step: 0.01, fmt: (v) => Math.round(v * 1000) + 'ms' }),
+  ];
+  const drives = [
+    ui.selectRow('Driven by', SOURCES.filter((o) => o[0] !== 'none'), () => a.globalSrc || 'level', (v) => (a.globalSrc = v)),
+  ];
   for (const [k, label] of [['gravity', 'Gravity'], ['timeScale', 'Speed'], ['wind', 'Wind'], ['bloom', 'Bloom'], ['exposure', 'Exposure']]) {
-    rows.push(ui.slider(label, () => a.globals[k] || 0, (v) => (a.globals[k] = v), { min: -1, max: 3, fmt: (v) => v.toFixed(2) }));
+    drives.push(ui.slider(label, () => a.globals[k] || 0, (v) => (a.globals[k] = v), { min: -1, max: 3, fmt: (v) => v.toFixed(2) }));
   }
-  return rows;
+  return { rows, analyser, drives };
 }
 
 function soundLinks(ui, fx, sel, spec) {
@@ -590,7 +586,8 @@ export function buildFxBrowser(ui) {
   const root = el('div', { class: 'fxBrowse' });
 
   // tools
-  const search = el('input', { type: 'text', placeholder: 'Search effects…', class: 'fxSearch', value: browserState.q });
+  const search = el('input', { type: 'text', placeholder: 'Search effects…', class: 'fxSearch', value: browserState.q,
+    title: 'Hover a card to run the effect live over the picture; click to add it; Cmd-click to make it the only effect' });
   const chips = el('div', { class: 'fxChips' });
   const byGroup = new Map();
   for (const e of EFFECTS) { const g = e.group || 'Other'; if (!byGroup.has(g)) byGroup.set(g, []); byGroup.get(g).push(e); }
@@ -650,8 +647,7 @@ export function buildFxBrowser(ui) {
       }
     }
   };
-  root.appendChild(el('div', { class: 'fxTools' }, [search, chips, setsBar,
-    el('span', { class: 'hint fxHoverHint', text: 'Hover a card: the effect runs live over the picture that is playing. Click to add it.' })]));
+  root.appendChild(el('div', { class: 'fxTools' }, [search, chips, setsBar]));
 
   const body = el('div', { class: 'fxBody' });
   root.appendChild(body);

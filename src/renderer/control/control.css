@@ -104,6 +104,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
   text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:6px;cursor:pointer}
 .sec>h3 .mono{text-transform:none;letter-spacing:0;font-weight:400}
 .sec>h3 .chev{color:var(--dim2);font-size:9px;width:9px}
+.sec>h3 .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .sec>.body{padding:2px var(--padIn) var(--padIn);display:flex;flex-direction:column;gap:var(--gap)}
 .sec.closed>.body{display:none}
 .ctl{display:grid;grid-template-columns:68px minmax(0,1fr) 42px;align-items:center;gap:var(--gap)}
@@ -534,3 +535,14 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:3px}
 /* --- live auditions in the catalogue --- */
 .fxClip.live{object-fit:fill}
 .fxHoverHint{flex-basis:100%}
+
+/* --- a "?" that explains a section or a control on hover, instead of a paragraph in the panel --- */
+.help{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+  border:1px solid var(--dim2);color:var(--dim);font-size:9.5px;font-weight:700;line-height:1;cursor:help;flex:none;
+  letter-spacing:0;text-transform:none;font-family:ui-monospace,Menlo,monospace}
+.help:hover{border-color:var(--fg);color:var(--fg)}
+.libTitle .help{margin-left:2px;align-self:center}
+/* the wall switches in the top bar belong together */
+.togGroup{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:var(--r);padding:0 4px;height:30px}
+/* the calibration pattern menu must show its name */
+#patSelect{width:118px;min-width:0}
