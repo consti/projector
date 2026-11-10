@@ -169,7 +169,7 @@ export const SCENES = [
   },
 ];
 
-const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'People', 'Toys', 'Generative', 'Trippy', 'Retro', 'Look', 'AI'];
+const GROUP_ORDER = ['Fluid', 'Water', 'Physics', 'Weather', 'Particles', 'Energy', 'Growth', 'Shapes', 'People', 'Toys', 'Worlds', 'Generative', 'Trippy', 'Lens', 'Retro', 'Rot', 'Look', 'AI'];
 
 export function buildFxSection(ui) {
   const P = ui.project();

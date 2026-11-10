@@ -103,6 +103,18 @@ room, Aquarium, Ball pit, Storm, Inferno, Break the picture, Overgrown, Event
 horizon, Falling into itself, Vaporwave …). Layers stack bottom-to-top and each
 has its own opacity. The *Trippy* and *Retro* groups are whole-picture shaders
 rather than simulations: they fold, tile and feed the video back into itself.
+The *Lens* group puts glass in front of it: chromatic aberration, a fisheye, an
+anamorphic, a tilt-shift miniature, a swirly Petzval and lens flare.
+The *Rot* group damages it on purpose, after sixem's
+[ImageRot](https://github.com/sixem/imagerot): a pixel sort that melts the
+picture into streaks, a quadtree mosaic, vaporwave tone bands, displaced
+blocks, the washed-out Chimera, the eaten-through Lacunae, a photo saved as a
+JPEG too many times, rainbow rot, 1-bit dither and a travelling wave.
+*Worlds* holds the **Flyover**: an endless flight over a generated landscape —
+mountains, hills, dunes, a canyon, islands, mesas, a city or the moon — drawn
+as a wireframe, a faceted low-poly surface, both, a cloud of points or contour
+lines, with the picture as the sky or draped over the ground, and a barrel roll
+on the beat if you want one.
 The *Shapes* group works on the shapes you masked instead: each mask has an
 **Effects see this shape** toggle, and the ones that are on cast shadows, stand
 off the wall as blocks, are swept by stage lights, or get traced in neon. The
@@ -328,6 +340,24 @@ real 3D models (see [The toys](#the-toys)):
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/room.jpg" width="220" alt="Room"><br><sub>Room</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/fliptiles.jpg" width="220" alt="Flip tiles"><br><sub>Flip tiles</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/chrome.jpg" width="220" alt="Liquid metal"><br><sub>Liquid metal</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/prism.jpg" width="220" alt="Prism"><br><sub>Prism</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/orbit.jpg" width="220" alt="Colour orbit"><br><sub>Colour orbit</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/solarise.jpg" width="220" alt="Solarise"><br><sub>Solarise</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/oilslick.jpg" width="220" alt="Oil slick"><br><sub>Oil slick</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/trails.jpg" width="220" alt="Colour trails"><br><sub>Colour trails</sub></td>
+</tr></table>
+
+**Lens**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/aberration.jpg" width="220" alt="Chromatic aberration"><br><sub>Chromatic aberration</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/fisheye.jpg" width="220" alt="Fisheye"><br><sub>Fisheye</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/anamorphic.jpg" width="220" alt="Anamorphic"><br><sub>Anamorphic</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/tiltshift.jpg" width="220" alt="Tilt-shift"><br><sub>Tilt-shift</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/petzval.jpg" width="220" alt="Petzval swirl"><br><sub>Petzval swirl</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/flare.jpg" width="220" alt="Lens flare"><br><sub>Lens flare</sub></td>
 </tr></table>
 
 **Retro**
@@ -336,6 +366,23 @@ real 3D models (see [The toys](#the-toys)):
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/synthwave.jpg" width="220" alt="Synthwave"><br><sub>Synthwave</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/vhs.jpg" width="220" alt="VHS tape"><br><sub>VHS tape</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/glitch.jpg" width="220" alt="Glitch"><br><sub>Glitch</sub></td>
+</tr></table>
+
+**Rot**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/pixelsort.jpg" width="220" alt="Pixel sort"><br><sub>Pixel sort</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/quadtree.jpg" width="220" alt="Quadtree"><br><sub>Quadtree</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/vaporwave.jpg" width="220" alt="Vaporwave"><br><sub>Vaporwave</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/rectangles.jpg" width="220" alt="Displaced blocks"><br><sub>Displaced blocks</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/chimera.jpg" width="220" alt="Chimera"><br><sub>Chimera</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/lacunae.jpg" width="220" alt="Lacunae"><br><sub>Lacunae</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/nostalgia.jpg" width="220" alt="JPEG nostalgia"><br><sub>JPEG nostalgia</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/rainbow.jpg" width="220" alt="Rainbow rot"><br><sub>Rainbow rot</sub></td>
+</tr><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/dither.jpg" width="220" alt="1-bit dither"><br><sub>1-bit dither</sub></td>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/wave.jpg" width="220" alt="Wave distort"><br><sub>Wave distort</sub></td>
 </tr></table>
 
 **Look**
@@ -396,6 +443,12 @@ real 3D models (see [The toys](#the-toys)):
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toydrop.jpg" width="220" alt="Toy box"><br><sub>Toy box</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toyparade.jpg" width="220" alt="Toy parade"><br><sub>Toy parade</sub></td>
 <td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/toyshow.jpg" width="220" alt="Toy showcase"><br><sub>Toy showcase</sub></td>
+</tr></table>
+
+**Worlds**
+
+<table><tr>
+<td align="center" valign="top"><img src="src/renderer/control/fx-thumbs/flyover.jpg" width="220" alt="Flyover"><br><sub>Flyover</sub></td>
 </tr></table>
 
 <!-- gallery:end -->

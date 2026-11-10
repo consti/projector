@@ -28,7 +28,7 @@ const only = args.filter((a) => !a.startsWith('--'));
 // effects that need time to build up before they look like anything
 const WAIT = { tetris: 9000, burn: 7000, feedback: 4000, shatter: 4000, water: 5000, snow: 5000, sand: 14000, vines: 12000,
   goo: 4000, balls: 4000, shapes: 4000, emoji: 4000, confetti: 3500, ink: 5000, smoke: 5000, fire: 5000, frost: 7000, shockwave: 2600,
-  toydrop: 8000, toyparade: 6000, toyshow: 3500 };
+  toydrop: 8000, toyparade: 6000, toyshow: 3500, trails: 4000, pixelsort: 7000 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class Page {
